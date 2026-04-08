@@ -1,403 +1,107 @@
-# Meraglim Holdings - Local Automations Master README
+# Meraglim Holdings — Local Automations Master README
 
 ## Project Overview
 
 This project converts 12 Make.com automation blueprints into persistent local Python scripts that run on macOS using LaunchAgents. All scripts execute locally with zero Manus involvement, preventing unexpected charges and ensuring reliability.
 
-**Status:** 🟢 Active - Scripts 1, 6, 7 & 8 running, Scripts 2-5 & 9-11 in development
-
-**Cost:** $0 - All automation runs locally on your Mac
-
-## Quick Start
-
-### Check All Scripts Status
-```bash
-launchctl list | grep com.meraglim
-```
-
-### View Real-time Logs
-```bash
-tail -f ~/Automations/logs/script_01.log
-```
-
-### Stop All Scripts
-```bash
-for plist in ~/Library/LaunchAgents/com.meraglim.*.plist; do
-  launchctl unload "$plist"
-done
-```
-
-### Start All Scripts
-```bash
-for plist in ~/Library/LaunchAgents/com.meraglim.*.plist; do
-  launchctl load "$plist"
-done
-```
-
-## Project Structure
-
-```
-~/Automations/
-├── README_MASTER.md                    # This file
-├── LAUNCHAGENT_SETUP.md               # How to create/manage LaunchAgents
-├── SCRIPT_DEPLOYMENT_TEMPLATE.md      # Template for deploying new scripts
-├── TROUBLESHOOTING_AND_LESSONS.md     # Known issues & solutions
-├── scripts/
-│   ├── script_01_google_sheets_to_airtable.py       ✅ ACTIVE
-│   ├── script_02_airtable_qualification_email.py    ⏳ Pending
-│   ├── script_03_qualified_prospect_calendar_invite.py ⏳ Pending
-│   ├── script_04_not_qualified_polite_decline.py    ⏳ Pending
-│   ├── script_05_qualified_7day_followup.py         ⏳ Pending
-│   ├── script_06_qualified_prospect_clickup_deal.py ✅ ACTIVE
-│   ├── script_07_gmail_reply_ai_qualification.py    ✅ ACTIVE
-│   ├── script_08_meeting_scheduled_clickup_prep.py  ✅ ACTIVE
-│   ├── script_09_mhc10_meeting_intelligence_trigger.py ⏳ Pending
-│   ├── script_10_mhc10_meeting_intelligence_summary.py ⏳ Pending
-│   ├── script_11_mhc11_post_meeting_intelligence.py ⏳ Pending
-│   └── shared_utils.py                 # Common utilities for all scripts
-├── config/
-│   ├── .env                           # API credentials (NEVER commit)
-│   └── state.db                       # SQLite state tracking database
-├── logs/
-│   ├── script_01.log                  # Script 1 output logs
-│   ├── script_01_error.log            # Script 1 error logs
-│   ├── script_XX.log                  # Other script logs
-│   └── cron.log                       # Cron execution history
-└── blueprints/
-    ├── blueprint_01.json              # Original Make.com blueprints
-    ├── blueprint_02.json
-    ├── ...
-    └── blueprint_12.json
-```
-
-## Scripts Overview
-
-### ✅ Active Scripts
-
-#### Script 1: Google Sheets to Airtable Sync
-- **Purpose:** Syncs new prospects from Google Sheets (Leads tab) to Airtable Prospects table
-- **Trigger:** Every 5 minutes via LaunchAgent
-- **Status:** ✅ ACTIVE & TESTED
-- **Input:** Google Sheets (spreadsheet ID: 1NX2xxzkKUO-EY2QXO_OtHQTaqGV8dvbxXikGMBoeS-g)
-- **Output:** Airtable Prospects table (Base: appoNkgoKHAUXgXV9, Table: tblxEhVek8ldTQMW1)
-- **Key Features:**
-  - Duplicate prevention by email
-  - State tracking (prevents reprocessing)
-  - Processes 10 rows per execution
-  - Comprehensive error logging
-- **LaunchAgent:** `com.meraglim.script01`
-- **Logs:** `~/Automations/logs/script_01.log`
-
-#### Script 6: Create ClickUp Deal for Qualified Prospect
-- **Purpose:** Creates a ClickUp deal when a prospect is marked as "Meeting Invite Sent"
-- **Trigger:** Every 5 minutes via LaunchAgent
-- **Status:** ✅ ACTIVE & TESTED
-- **Input:** Airtable Prospects table
-- **Output:** ClickUp Task
-- **Key Features:**
-  - Deduplication filter (`{ClickUp Task Created} != 1`)
-  - Prevents duplicate task creation
-- **LaunchAgent:** `com.meraglim.script06`
-- **Logs:** `~/Automations/logs/script_06_qualified_prospect_clickup.log`
-
-#### Script 7: Gmail Reply AI Qualification
-- **Purpose:** Monitors for email replies, searches Airtable for prospect, uses AI to qualify
-- **Trigger:** Every 5 minutes via LaunchAgent
-- **Status:** ✅ ACTIVE & TESTED
-- **Input:** Gmail (filters: subject contains "Re:", NOT from @meraglim.com)
-- **Output:** Airtable Prospects table (updates qualification status)
-- **Key Features:**
-  - Gmail filter for replies only
-  - Airtable search filter (only proceeds if prospect found)
-  - OpenAI GPT-4.1-mini for AI qualification
-  - Marks emails as read after processing
-- **LaunchAgent:** `com.meraglim.script07`
-- **Logs:** `~/Automations/logs/script_07.log`
-
-#### Script 8: Prepare ClickUp Task When Meeting Scheduled
-- **Purpose:** Creates a prep task in ClickUp when a meeting is scheduled
-- **Trigger:** Every 5 minutes via LaunchAgent
-- **Status:** ✅ ACTIVE & TESTED
-- **Input:** Airtable Prospects table
-- **Output:** ClickUp Task
-- **Key Features:**
-  - Deduplication filter (`{ClickUp Task Created} != 1`)
-  - Prevents duplicate task creation
-- **LaunchAgent:** `com.meraglim.script08`
-- **Logs:** `~/Automations/logs/script_08_meeting_scheduled_clickup.log`
-
-### ⏳ Pending Scripts (To Be Created)
-
-| Script | Purpose | Trigger | Status |
-|--------|---------|---------|--------|
-| Script 2 | Send qualification email to new prospect | New Airtable record | Pending |
-| Script 3 | Create calendar invite for qualified prospect | Qualified status in Airtable | Pending |
-| Script 4 | Send polite decline to not-qualified prospect | Not qualified status | Pending |
-| Script 5 | Send 7-day follow-up email | 7 days after initial contact | Pending |
-| Script 9 | Trigger meeting intelligence on meeting start | Meeting starts | Pending |
-| Script 10 | Generate meeting intelligence summary | Meeting ends | Pending |
-| Script 11 | Post-meeting intelligence processing | After meeting | Pending |
-
-## Configuration
-
-### Environment Variables (.env)
-
-Located at: `~/.env`
-
-**Required variables:**
-```
-AIRTABLE_API_KEY=your_airtable_api_key
-AIRTABLE_BASE_ID=appoNkgoKHAUXgXV9
-GOOGLE_TOKEN_FILE=/Users/kevinmassengill/Automations/config/google_token.json
-OPENAI_API_KEY=your_openai_api_key
-CLICKUP_API_KEY=your_clickup_api_key
-CLAY_API_KEY=your_clay_api_key
-```
-
-**⚠️ IMPORTANT:** Never commit `.env` file to version control
-
-### State Database
-
-Located at: `~/Automations/config/state.db`
-
-SQLite database tracking:
-- Last processed row/record ID
-- Last execution timestamp
-- Error counts
-- Script status
-
-**Query state:**
-```bash
-sqlite3 ~/Automations/config/state.db "SELECT * FROM script_state;"
-```
-
-## APIs & Integrations
-
-| API | Purpose | Credentials | Status |
-|-----|---------|-------------|--------|
-| Google Sheets | Read prospect data | GOOGLE_TOKEN_FILE | ✅ Active |
-| Airtable | Store & update prospects | AIRTABLE_API_KEY | ✅ Active |
-| Gmail | Monitor email replies | MCP Integration | ✅ Active |
-| OpenAI | AI qualification | OPENAI_API_KEY | ✅ Active |
-| ClickUp | Task/deal management | CLICKUP_API_KEY | ✅ Active |
-| Clay | Data enrichment | CLAY_API_KEY | ⏳ Pending |
-
-## Logging & Monitoring
-
-### Log Files
-
-All logs stored in: `~/Automations/logs/`
-
-**Format:** `YYYY-MM-DD HH:MM:SS - script_name - LEVEL - message`
-
-**Log Levels:**
-- `INFO` - Normal operation
-- `WARNING` - Potential issues
-- `ERROR` - Errors caught and handled
-- `CRITICAL` - Fatal errors requiring attention
-
-### View Logs
-
-**Real-time monitoring:**
-```bash
-tail -f ~/Automations/logs/script_01.log
-```
-
-**Last 50 lines:**
-```bash
-tail -50 ~/Automations/logs/script_01.log
-```
-
-**Search for errors:**
-```bash
-grep ERROR ~/Automations/logs/script_01.log
-```
-
-**View all logs:**
-```bash
-ls -lh ~/Automations/logs/
-```
-
-## LaunchAgent Management
-
-### Check Status
-```bash
-launchctl list | grep com.meraglim
-```
-
-### Load a Script
-```bash
-launchctl load ~/Library/LaunchAgents/com.meraglim.scriptXX.plist
-```
-
-### Unload a Script
-```bash
-launchctl unload ~/Library/LaunchAgents/com.meraglim.scriptXX.plist
-```
-
-### Reload (Restart) a Script
-```bash
-launchctl unload ~/Library/LaunchAgents/com.meraglim.scriptXX.plist
-launchctl load ~/Library/LaunchAgents/com.meraglim.scriptXX.plist
-```
-
-### View Plist File
-```bash
-cat ~/Library/LaunchAgents/com.meraglim.scriptXX.plist
-```
-
-## Troubleshooting
-
-### Script Not Running
-
-1. **Check if LaunchAgent is loaded:**
-   ```bash
-   launchctl list | grep com.meraglim.scriptXX
-   ```
-
-2. **Check for errors:**
-   ```bash
-   tail -50 ~/Automations/logs/script_XX_error.log
-   ```
-
-3. **Reload the LaunchAgent:**
-   ```bash
-   launchctl unload ~/Library/LaunchAgents/com.meraglim.scriptXX.plist
-   launchctl load ~/Library/LaunchAgents/com.meraglim.scriptXX.plist
-   ```
-
-### Unexpected Manus Tasks
-
-**This should NOT happen anymore.** If you see new "Sync Prospects" tasks in Manus:
-
-1. Check Manus "Scheduled" tasks
-2. Delete any active schedules
-3. Verify LaunchAgent is still loaded
-4. Contact support
-
-See: `TROUBLESHOOTING_AND_LESSONS.md`
-
-### API Errors
-
-**Check credentials:**
-```bash
-cat ~/.env | grep -E "AIRTABLE|GOOGLE|OPENAI"
-```
-
-**Test script manually:**
-```bash
-/usr/bin/python3 ~/Automations/scripts/script_XX_description.py
-```
-
-**Check API rate limits:**
-- Airtable: 5 requests/second
-- Google Sheets: 300 requests/minute
-- OpenAI: Check your plan limits
-
-## Important Files & References
-
-| File | Purpose | Access |
-|------|---------|--------|
-| `LAUNCHAGENT_SETUP.md` | How to create/manage LaunchAgents | Read first |
-| `SCRIPT_DEPLOYMENT_TEMPLATE.md` | Template for new scripts | Use for Scripts 2-12 |
-| `TROUBLESHOOTING_AND_LESSONS.md` | Known issues & solutions | Reference when problems occur |
-| `shared_utils.py` | Common utilities | Used by all scripts |
-| `.env` | API credentials | NEVER commit |
-| `state.db` | Script state tracking | SQLite database |
-
-## Critical Lessons Learned
-
-### ❌ What NOT to Do
-
-1. **Never use Manus scheduler** for local script execution
-2. **Never hardcode credentials** in scripts
-3. **Never skip error handling** in scripts
-4. **Never forget to test** scripts manually first
-5. **Never ignore logs** when troubleshooting
-
-### ✅ What TO Do
-
-1. **Always use LaunchAgent** for macOS automation
-2. **Always store credentials** in `.env` file
-3. **Always include error handling** and logging
-4. **Always test manually** before scheduling
-5. **Always monitor logs** for first 24 hours
-
-See: `TROUBLESHOOTING_AND_LESSONS.md` for full details
-
-## Manus Integration
-
-### How Manus Accesses This Project
-
-1. **Files Location:** `/mnt/desktop/Make Blueprints/Automations/`
-2. **Manus can read:** All markdown files and documentation
-3. **Manus can reference:** Script locations and setup instructions
-4. **Manus can update:** Documentation and checklists
-
-### For Next Manus Session
-
-When continuing this project:
-
-1. **Read this README first** to understand the project
-2. **Check status:** `launchctl list | grep com.meraglim`
-3. **Review logs:** `tail -20 ~/Automations/logs/*.log`
-4. **Check for issues:** Look at `TROUBLESHOOTING_AND_LESSONS.md`
-5. **Verify no Manus tasks:** Check Manus dashboard
-
-### Files Manus Will Need
-
-- `README_MASTER.md` - Project overview
-- `LAUNCHAGENT_SETUP.md` - LaunchAgent reference
-- `SCRIPT_DEPLOYMENT_TEMPLATE.md` - Deployment checklist
-- `TROUBLESHOOTING_AND_LESSONS.md` - Known issues
-- `scripts/shared_utils.py` - Common functions
-- `blueprints/*.json` - Original Make.com blueprints
-
-## Contact & Support
-
-### Internal Issues
-- Check `TROUBLESHOOTING_AND_LESSONS.md`
-- Review logs: `~/Automations/logs/`
-- Test script manually
-
-### Manus Support
-- Issue: Duplicate tasks or unexpected charges
-- Contact: https://manus.im/feedback
-- Reference: Previous conversation link in support request
-
-## Version History
-
-| Date | Version | Status | Notes |
-|------|---------|--------|-------|
-| 2026-03-21 | 1.0 | Active | Scripts 1 & 7 deployed, LaunchAgent setup complete |
-| 2026-04-08 | 1.1 | Active | Scripts 6 & 8 deployed, fixed filter formula deduplication |
-| | | | Resolved duplicate task crisis |
-| | | | Created comprehensive documentation |
-
-## Next Steps
-
-1. ✅ Script 1 (Google Sheets → Airtable) - ACTIVE
-2. ✅ Script 6 (Create ClickUp Deal) - ACTIVE
-3. ✅ Script 7 (Gmail AI Qualification) - ACTIVE
-4. ✅ Script 8 (Prepare ClickUp Task) - ACTIVE
-5. ⏳ Script 2 (Send Qualification Email) - Next
-6. ⏳ Script 3 (Calendar Invite) - After Script 2
-7. ⏳ Scripts 4-5, 9-11 - Continue in order
-8. 📋 Master deployment summary - When all scripts complete
-
-## Questions?
-
-Refer to:
-1. **Project structure:** This README
-2. **LaunchAgent setup:** `LAUNCHAGENT_SETUP.md`
-3. **Deployment process:** `SCRIPT_DEPLOYMENT_TEMPLATE.md`
-4. **Troubleshooting:** `TROUBLESHOOTING_AND_LESSONS.md`
-5. **Script details:** Individual script comments
-6. **Common functions:** `shared_utils.py`
+**Status:** 🟢 Active — Scripts 1–9, 10T, MHC10, MHC10T, MHC11 deployed; Scripts 6 & 8 fixed and verified  
+**Cost:** $0 — All automation runs locally on your Mac  
+**Last Updated:** April 8, 2026
 
 ---
 
-**Last Updated:** 2026-04-08  
+## ⚠️ New Agent Onboarding
+
+**If you are a Manus agent starting a new task, do not rely on this README for script status.** Pull the latest docs from GitHub first (the opening prompt handles this automatically), then read `SCRIPTS_REGISTRY.md` as the single source of truth for all script statuses.
+
+---
+
+## Current Script Status
+
+| Script | Name | Status | Notes |
+|--------|------|--------|-------|
+| Script 0 | Daily Log Analysis | ✅ ACTIVE | Runs at 6 AM; handles Script 7 comma-millisecond timestamp format |
+| Script 1 | Google Sheets → Airtable | ✅ ACTIVE | Every 5 min via LaunchAgent |
+| Script 2 | Airtable → Qualification Email | ✅ ACTIVE | Every 15 min via LaunchAgent |
+| Script 3 | Qualified Prospect → Calendar Invite | ✅ ACTIVE | LaunchAgent |
+| Script 4 | Not Qualified → Polite Decline | ✅ ACTIVE | Every 15 min via LaunchAgent |
+| Script 5 | No Response → 7-Day Follow-Up | ✅ ACTIVE | Uses google_token.json; correct Airtable field names |
+| Script 6 | Qualified Prospect → ClickUp Deal | ✅ FIXED | Filter formula fixed (Make.com TRUE()/FALSE() → Airtable 1/0); deduplication added |
+| Script 7 | Gmail Reply → AI Qualification | ✅ ACTIVE | Every 5 min; comma-millisecond timestamps handled by Script 0 |
+| Script 8 | Meeting Scheduled → ClickUp Prep | ✅ FIXED | Same filter formula fix as Script 6; deduplication added |
+| Script 9 | Clay Enrichment Webhook | ✅ ACTIVE | Flask server on port 8000; receives Clay POSTs |
+| Script 10T | Meeting Intelligence Trigger | ✅ ACTIVE | Webhook-triggered; event-driven |
+| MHC10 | Meeting Intelligence Sync | ✅ ACTIVE | Event-driven |
+| MHC10T | Meeting Intelligence Trigger (MHC) | ✅ ACTIVE | Event-driven |
+| MHC11 | Post-Meeting Intelligence Sync | ✅ ACTIVE | Event-driven |
+
+---
+
+## Infrastructure
+
+| Service | Status | Details |
+|---------|--------|---------|
+| Cloudflare Tunnel | ✅ Running | LaunchAgent `com.meraglim.cloudflared-tunnel`; 4 connections to ATL edge nodes |
+| script10t.meraglim.com | ✅ Healthy | Routes to localhost:8000; `/health` endpoint confirmed |
+| Script 9 Webhook | ✅ Running | Flask on port 8000; LaunchAgent `com.meraglim.script09-clay-webhook` |
+| `.env` | ✅ 33 entries | Includes CLAY_API_KEY; loaded via explicit absolute path in shared_utils.py |
+| GitHub Repo | ✅ Public | https://github.com/kwmassengill/automation; auto-pushed at session close |
+
+---
+
+## Session Handoff Workflow
+
+### Starting a New Task
+
+Paste the opening prompt from `~/Automations/docs/STANDARD_OPENING_PROMPT.md`. The agent will pull all 5 docs from GitHub automatically — no file attachments needed.
+
+### Closing a Session
+
+Paste the close protocol from `~/Automations/docs/SESSION_CLOSE_PROTOCOL.md`. The agent updates all 5 docs, uploads to CDN, and provides the `session_close.sh` command. Running that command saves docs to Mac and pushes to GitHub.
+
+---
+
+## Quick Start Commands
+
+```bash
+# Check all script LaunchAgents
+launchctl list | grep com.meraglim
+
+# View real-time logs
+tail -f ~/Automations/logs/script_01.log
+
+# Check Cloudflare tunnel health
+curl -s https://script10t.meraglim.com/health
+
+# Stop all scripts
+for plist in ~/Library/LaunchAgents/com.meraglim.*.plist; do launchctl unload "$plist"; done
+
+# Start all scripts
+for plist in ~/Library/LaunchAgents/com.meraglim.*.plist; do launchctl load "$plist"; done
+```
+
+---
+
+## Platform Context
+
+- **Mac:** Apple Silicon MacBook Pro, username: kevinmassengill
+- **Python:** /usr/bin/python3 (3.9) — all scripts must use Python 3.9-compatible syntax
+- **Homebrew:** /opt/homebrew/bin/ (NOT /usr/local/bin/)
+- **LaunchAgents:** ~/Library/LaunchAgents/com.meraglim.*
+- **Google OAuth:** All scripts use `google_token.json` (never `oauth_token.json`)
+- **Credentials:** ~/Automations/config/.env (33 entries; loaded via explicit absolute path)
+- **GitHub:** https://github.com/kwmassengill/automation (public; PAT in macOS Keychain)
+
+---
+
+## Open Items
+
+| Item | Priority | Added |
+|------|----------|-------|
+| Monitor Scripts 6 & 8 for 24–48 hours to confirm no duplicate ClickUp tasks | Medium | April 8, 2026 |
+| Clay webhook URL in Clay's UI still needs to be pointed to `https://script10t.meraglim.com/clay-webhook` | Medium | April 8, 2026 |
+
+---
+
 **Maintained By:** Manus AI Agent  
-**Project:** Local Automations – Make.com Migration  
-**Status:** 🟢 Active & Monitored
+**Project:** Local Automations — Make.com Migration

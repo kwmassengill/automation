@@ -37,27 +37,26 @@
 
 ### Key Lessons
 
-1. **Never use Manus scheduler for local scripts** - It's designed for Manus tasks, not local execution
-2. **LaunchAgents are the native macOS solution** - They're built-in, free, and reliable
-3. **Always verify the execution method** - Check if tasks are being created in Manus when they shouldn't be
-4. **Monitor logs closely** - The script_01.log showed the script was running correctly locally
-5. **Separate concerns** - Manus is for AI tasks; LaunchAgent is for local automation
+1. **Never use Manus scheduler for local scripts** — It is designed for Manus tasks, not local execution.
+2. **LaunchAgents are the native macOS solution** — They are built-in, free, and reliable.
+3. **Always verify the execution method** — Check if tasks are being created in Manus when they should not be.
+4. **Monitor logs closely** — The script_01.log showed the script was running correctly locally.
+5. **Separate concerns** — Manus is for AI tasks; LaunchAgent is for local automation.
+
+---
 
 ## How to Identify Similar Issues
 
 ### Warning Signs
 
-- **Unexpected tasks appearing in Manus queue** - Check if there's a scheduled task in Manus
-- **Script running but Manus tasks being created** - Verify the execution method
-- **Duplicate tasks with same name** - Look for a Manus schedule or automation
-- **Charges without visible work** - Check Manus task history
+- **Unexpected tasks appearing in Manus queue** — Check if there is a scheduled task in Manus.
+- **Script running but Manus tasks being created** — Verify the execution method.
+- **Duplicate tasks with same name** — Look for a Manus schedule or automation.
+- **Charges without visible work** — Check Manus task history.
 
 ### Debugging Steps
 
-1. **Check Manus Scheduled Tasks:**
-   - Go to Manus dashboard
-   - Filter by "Scheduled" tasks
-   - Look for any active schedules related to your scripts
+1. **Check Manus Scheduled Tasks:** Go to Manus dashboard → Filter by "Scheduled" tasks → Look for any active schedules related to your scripts.
 
 2. **Check LaunchAgents:**
    ```bash
@@ -74,47 +73,9 @@
    tail -f ~/Automations/logs/script_01.log
    ```
 
-5. **Check for Manus Tasks:**
-   - Go to your Manus "All tasks" view
-   - Look for new tasks appearing in real-time
+5. **Check for Manus Tasks:** Go to your Manus "All tasks" view and look for new tasks appearing in real-time.
 
-## Prevention Strategies
-
-### For Future Scripts
-
-1. **Always use LaunchAgent** for local macOS scripts
-2. **Never use Manus scheduler** for local execution
-3. **Test script manually first** before scheduling
-4. **Monitor logs** for the first 24 hours after deployment
-5. **Check Manus task queue** to ensure no unexpected tasks are created
-
-### Best Practices
-
-1. **One LaunchAgent per script** - Separate plist files for each script
-2. **Consistent naming** - Use `com.meraglim.scriptXX` format
-3. **Comprehensive logging** - Always log to file for debugging
-4. **Error notifications** - Include email alerts on failure (in script)
-5. **State tracking** - Prevent duplicate processing with state database
-
-## Support Communication
-
-### What We Told Manus Support
-
-**Issue:** Manus scheduler created hundreds of duplicate tasks, consuming credits
-
-**Request:** 
-- Batch delete duplicate "Sync Prospects from Google Sheets" tasks
-- Review charges from the duplicate tasks
-- Consider credit adjustment
-
-**Status:** Awaiting response from support team
-
-### Follow-up Actions
-
-- [ ] Monitor Manus support response
-- [ ] Confirm if credits will be adjusted
-- [ ] Document final resolution
-- [ ] Update this guide with outcome
+---
 
 ## Technical Details
 
@@ -130,81 +91,132 @@
 | Manus integration risk | ✓ | ✗ |
 | Monitoring tools | Limited | Excellent |
 
-### LaunchAgent Plist Structure
+---
 
-```xml
-<key>Label</key>              <!-- Unique identifier -->
-<key>ProgramArguments</key>   <!-- Command to execute -->
-<key>StartInterval</key>      <!-- Seconds between runs -->
-<key>StandardOutPath</key>    <!-- Stdout log file -->
-<key>StandardErrorPath</key>  <!-- Stderr log file -->
-<key>RunAtLoad</key>          <!-- Auto-start on boot -->
-<key>KeepAlive</key>          <!-- Restart if crashes -->
+## April 8, 2026 — Script 9 Rebuild, Python 3.9 Types, and Cloudflare Tunnel
+
+### Issue 1: Script 9 Polling vs Webhook Architecture
+
+**Symptom:** Script 9 was built to poll Clay's API (`api.clay.com/v1/enrichment/results`), but all requests returned 404 or "deprecated API endpoint."
+
+**Root Cause:** Clay does not have a polling API for enrichment results. The original Make.com scenario was a webhook receiver — Clay pushes data out when enrichment completes. The script was built with the wrong architecture.
+
+**Resolution:** Script 9 was completely rewritten as a Flask HTTP server listening on port 8000. Clay was reconfigured to POST to `https://script10t.meraglim.com/clay-webhook` instead of the old Make.com webhook URL (`https://hook.us2.make.com/gq8f3w0txlu5hp2l38lurh9pn9agkmiv`).
+
+**Rule going forward:** Any script that receives data from an external service (Clay, Make.com, Zapier, etc.) must be a webhook receiver, not a polling script. Check the original Make.com blueprint — if Module 1 is a "Custom Webhook" trigger, the local replacement must be an HTTP server.
+
+---
+
+### Issue 2: Python 3.9 Type Hint Incompatibility
+
+**Symptom:** Script 9 crashed on startup with `TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'`.
+
+**Root Cause:** The script used the union type hint syntax `dict | None`, which was introduced in Python 3.10. The Mac is running Python 3.9 (the system default on macOS Monterey/Ventura).
+
+**Resolution:** Changed the syntax to `Optional[dict]` from the `typing` module, which is backwards-compatible with Python 3.9.
+
+**Rule going forward:** All scripts must be written for Python 3.9 compatibility. Avoid `X | Y` union type hints; use `Optional[X]` or `Union[X, Y]` from `typing` instead.
+
+---
+
+### Issue 3: LaunchAgent Working Directory and `.env` Loading
+
+**Symptom:** Script 9 reported "Clay API key not configured" even though the key was present in `~/Automations/config/.env`.
+
+**Root Cause:** `shared_utils.py` used a bare `load_dotenv()` call with no path argument. When run by a LaunchAgent, the working directory is the system root, not the script's folder, so Python could not find the `.env` file by relative path.
+
+**Resolution:** Updated `shared_utils.py` to use an explicit absolute path: `load_dotenv("/Users/kevinmassengill/Automations/config/.env")`. This permanently fixes credential loading for all scripts running as LaunchAgents.
+
+**Rule going forward:** Never use bare `load_dotenv()` in any script. Always specify the full absolute path to the `.env` file.
+
+---
+
+### Issue 4: CDN Caching on File Re-Uploads
+
+**Symptom:** After fixing the Python 3.9 type hint and re-uploading the file to the Manus CDN, the `curl` deploy command still downloaded the old broken version.
+
+**Root Cause:** The Manus CDN caches uploaded files. If a file is edited and re-uploaded quickly, the CDN may serve the previously cached version from the old URL.
+
+**Resolution:** Always re-upload to get a fresh CDN URL, then verify the downloaded file contains the expected changes before deploying:
+```bash
+curl -fsSL "<new_cdn_url>" | grep "expected_text"
 ```
 
-## Going Forward
+**Rule going forward:** After any file fix and re-upload, always verify the new CDN URL serves the corrected content before running the deploy command on the Mac.
 
-### For Each New Script
+---
 
-1. **Create the Python script** with error handling and logging
-2. **Test it manually** to ensure it works
-3. **Create a LaunchAgent plist** file
-4. **Load the LaunchAgent** with `launchctl load`
-5. **Monitor logs** for 24 hours
-6. **Verify no Manus tasks** are being created
-7. **Document the script** in README
+### Issue 5: Cloudflare Tunnel DNS Proxy Status
 
-### Script Deployment Checklist
+**Symptom:** `https://script10t.meraglim.com/health` returned empty even though the tunnel was running and the DNS CNAME record existed.
 
-- [ ] Script created and tested manually
-- [ ] Script has comprehensive error handling
-- [ ] Script has logging to file
-- [ ] LaunchAgent plist created
-- [ ] LaunchAgent loaded with `launchctl load`
-- [ ] LaunchAgent status verified with `launchctl list`
-- [ ] Logs monitored for 24 hours
-- [ ] No unexpected Manus tasks created
-- [ ] Script documented in README
-- [ ] Interval and timing documented
+**Root Cause:** The Cloudflare DNS record for `script10t.meraglim.com` had Proxy Status set to "DNS only" (grey cloud). Cloudflare tunnels require the record to be **Proxied** (orange cloud) to route traffic through the tunnel infrastructure.
+
+**Resolution:** In the Cloudflare dashboard (DNS → Records), toggled the `script10t` CNAME record from "DNS only" to "Proxied." The health check responded immediately after the change.
+
+**Rule going forward:** All Cloudflare tunnel CNAME records must be set to **Proxied** (orange cloud). "DNS only" bypasses the tunnel and will not work.
+
+---
+
+---
+
+## April 8, 2026 — GitHub Session Sync, Repo Cleanup, and Workflow Optimization
+
+### Issue 1: Session State Lost Between Tasks (Manus Sandbox Isolation)
+
+**Symptom:** Each new Manus task starts with a completely fresh sandbox. Files updated during a session do not persist to the next task's sandbox automatically. The previous workaround was manually attaching 5 documentation files at the start of every task.
+
+**Root Cause:** Manus sandbox isolation is by design — each task gets a clean environment. The project shared files directory (`/home/ubuntu/projects/`) is read-only and cannot be updated programmatically from inside a task.
+
+**Resolution:** Implemented a GitHub-based session sync system:
+1. Created a public GitHub repo at `https://github.com/kwmassengill/automation`
+2. `session_close.sh` now auto-commits and pushes `docs/` and `scripts/` to GitHub at every session close
+3. The opening prompt includes `curl` commands that pull all 5 docs from raw GitHub URLs into `/tmp/` at session start
+4. PAT stored in macOS Keychain — no password prompts
+5. `.gitignore` excludes all credentials (`.env`, `google_token.json`, `logs/`)
+
+**Result:** Zero-friction session handoff. No file attachments needed at task start. State is always current in GitHub.
+
+---
+
+### Issue 2: Repository Contained 41 Stale Files
+
+**Symptom:** After the initial push to GitHub, the repo contained `.backup`, `.bak`, `_oauth` duplicate scripts, old variant filenames, per-script README files, and one-time session artifact docs.
+
+**Root Cause:** The `~/Automations/` directory had accumulated files from multiple development sessions without cleanup.
+
+**Resolution:** Audited all 68 files in the repo. Removed 17 stale script files and 24 stale doc files. Moved `requirements.txt` from `docs/` to `scripts/`. Committed and pushed the clean repo. Final state: 19 canonical scripts + 7 core docs.
+
+**Rule going forward:** The canonical script filename for each script number is the one without any suffix (`_oauth`, `_deal`, `_trigger`, `_backup`, `.bak`). When a script is rebuilt or fixed, the canonical file is updated in place — no new filename variants.
+
+---
+
+### Issue 3: README_MASTER.md and SCRIPTS_REGISTRY.md Were Severely Outdated
+
+**Symptom:** The GitHub versions of both files reflected an early-session state — Scripts 2–11 shown as "Pending", incorrect filenames (e.g., `script_05_qualified_7day_followup.py`), and Scripts 6 and 8 still marked `NEEDS FIX` even after they were repaired.
+
+**Root Cause:** The session close protocol in the Scripts 6/8 repair task generated updated docs, but those docs were based on incomplete context (the agent in that task did not have full visibility into the current project state).
+
+**Resolution:** Both files completely rewritten this session to reflect accurate current state: all scripts active, correct canonical filenames, correct infrastructure details, and current open items.
+
+**Rule going forward:** At the start of each session close, the agent must pull the current docs from GitHub and read them before writing updates — not rely solely on the current session's context.
+
+---
+
+### Issue 4: SESSION_CLOSE_PROTOCOL.md Referenced Old Workflow
+
+**Symptom:** The protocol still referenced `SCRIPTS_QUICK_REFERENCE_MERAGLIM_FORMAT_[Date].docx`, the `--quickref` flag, and a curl-based deploy flow instead of the new GitHub-push workflow.
+
+**Resolution:** SESSION_CLOSE_PROTOCOL.md rewritten to reflect the current tested workflow: 5 markdown docs only (no DOCX), `session_close.sh` with `--opening` flag for `STANDARD_OPENING_PROMPT.md`, and explicit note that `session_close.sh` auto-pushes to GitHub.
+
+---
 
 ## Contact Information
 
 **If duplicate tasks appear again:**
 
-1. Check Manus "Scheduled" tasks for any active schedules
-2. Delete any Manus scheduled tasks
+1. Check Manus "Scheduled" tasks for any active schedules.
+2. Delete any Manus scheduled tasks.
 3. Verify LaunchAgent is still loaded: `launchctl list | grep com.meraglim`
 4. Check logs: `tail -f ~/Automations/logs/scriptXX.log`
-5. Contact Manus support if issue persists
-
-**Manus Support:** https://manus.im/feedback
-
-## Scripts 6 & 8 Duplicate Task Creation (April 8, 2026)
-
-### What Happened
-
-**Issue:** Scripts 6 and 8 were creating duplicate ClickUp tasks on every run.
-**Symptoms:**
-- Multiple identical tasks appearing in ClickUp for the same prospect/meeting.
-- Logs showing the script processing the same records repeatedly.
-- Filter formulas returning records that had already been processed.
-
-### Root Cause
-
-Both scripts were missing deduplication filters in their Airtable queries. They were using Make.com syntax (`TRUE()`, `FALSE()`) instead of Airtable's native syntax (`1`, `0`) for boolean/checkbox fields.
-
-### Resolution
-
-1. **Script 6:** Added `{ClickUp Task Created} != 1` to the filter formula.
-   - *Before:* `AND({Qualification Status} = "Meeting Invite Sent", {In Automation} != BLANK())`
-   - *After:* `AND({Qualification Status} = "Meeting Invite Sent", {In Automation} != BLANK(), {ClickUp Task Created} != 1)`
-2. **Script 8:** Added `{ClickUp Task Created} != 1` to the filter formula.
-   - *Before:* `{Qualification Status} = 'Meeting Scheduled'`
-   - *After:* `AND({Qualification Status} = 'Meeting Scheduled', {ClickUp Task Created} != 1)`
-
-### Lesson Learned
-
-When converting Make.com blueprints to Python scripts, always use **native Airtable filter formula syntax**:
-- Use `1` and `0` for boolean/checkbox fields instead of `TRUE()` and `FALSE()`.
-- Use `BLANK()` for empty field checks.
-- Always verify field names exist in your Airtable base (e.g., `{ClickUp Task Created}` instead of `{Prep Task Created}`).
+5. Contact Manus support if issue persists: https://manus.im/feedback
