@@ -1,0 +1,33 @@
+# Core dependencies for Meraglim Automations
+# Install with: pip3 install -r requirements.txt
+
+# Environment and configuration
+python-dotenv>=1.0.0
+
+# Google APIs
+google-auth-oauthlib>=1.0.0
+google-auth-httplib2>=0.2.0
+google-api-python-client>=2.80.0
+
+# Airtable API
+airtable-python-wrapper>=0.15.0
+pyairtable>=2.0.0
+
+# ClickUp API
+clickup-python>=1.0.0
+
+# HTTP requests
+requests>=2.31.0
+
+# Email handling
+secure-smtplib>=0.1.1
+
+# Data processing
+pandas>=2.0.0
+python-dateutil>=2.8.0
+
+# Database
+sqlite3  # Built-in, included for reference
+
+# Utilities
+pytz>=2023.3

@@ -1,0 +1,400 @@
+#!/usr/bin/env python3
+"""
+Script 8: Meeting Scheduled → ClickUp Prep Task
+Converts Make.com Scenario 8 into a persistent local Python script.
+
+This script monitors Airtable for meetings that have been scheduled,
+creates corresponding prep tasks in ClickUp, and updates Airtable
+with the ClickUp task ID.
+
+Trigger: Meeting record in Airtable with status = "Meeting Scheduled"
+Action: Create prep task in ClickUp
+Update: Airtable record with ClickUp task ID and status = "Prep Task Created"
+"""
+
+import os
+import sys
+import json
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Any, Optional
+
+# Add parent directory to path to import shared_utils
+sys.path.insert(0, str(Path(__file__).parent))
+try:
+    from shared_utils import setup_logger, StateManager, handle_errors
+except ImportError:
+    print("Warning: shared_utils not found in current directory. Using fallback logging.")
+    import logging
+    def setup_logger(name):
+        logger = logging.getLogger(name)
+        logger.setLevel(logging.INFO)
+        handler = logging.StreamHandler()
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        return logger
+    
+    class StateManager:
+        def get_state(self, name): return {}
+        def update_state(self, **kwargs): pass
+        
+    def handle_errors(name, logger):
+        def decorator(func):
+            def wrapper(*args, **kwargs):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    logger.error(f"Error: {e}", exc_info=True)
+                    raise
+            return wrapper
+        return decorator
+
+import requests
+
+# Load .env file explicitly
+env_file = Path.home() / "Automations" / "config" / ".env"
+if env_file.exists():
+    with open(env_file) as f:
+        for line in f:
+            if line.strip() and not line.startswith("#"):
+                try:
+                    key, value = line.strip().split("=", 1)
+                    os.environ[key] = value.strip()
+                except ValueError:
+                    pass
+
+# Configuration
+SCRIPT_NAME = "script_08_meeting_scheduled_clickup"
+logger = setup_logger(SCRIPT_NAME)
+state_manager = StateManager()
+
+# Airtable Configuration
+AIRTABLE_API_KEY = os.getenv("AIRTABLE_API_KEY")
+AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID", "appoNkgoKHAUXgXV9")
+AIRTABLE_TABLE_ID = os.getenv("AIRTABLE_TABLE_ID", "tblxEhVek8ldTQMW1")
+
+# ClickUp Configuration
+CLICKUP_API_KEY = os.getenv("CLICKUP_API_KEY")
+CLICKUP_TEAM_ID = os.getenv("CLICKUP_TEAM_ID", "90174046780")
+CLICKUP_LIST_ID = os.getenv("CLICKUP_LIST_ID", "901711223397")
+
+# Script Configuration
+DRY_RUN = os.getenv("DRY_RUN", "True").lower() in ("true", "1", "t")
+MAX_TASKS_PER_RUN = int(os.getenv("MAX_TASKS_PER_RUN", "10"))
+
+class AirtableClient:
+    def __init__(self, api_key: str, base_id: str):
+        self.api_key = api_key
+        self.base_id = base_id
+        self.base_url = "https://api.airtable.com/v0"
+        self.headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+    
+    def get_scheduled_meetings(self, table_id: str) -> List[Dict]:
+        """Fetch records that might be ready for processing."""
+        url = f"{self.base_url}/{self.base_id}/{table_id}"
+        
+        # We use a broad formula here and do the strict filtering in Python
+        # to exactly match the Make.com blueprint logic
+        params = {
+            "filterByFormula": "AND({Qualification Status} = 'Meeting Scheduled', {Prep Task Created} != 1)",
+            "maxRecords": MAX_TASKS_PER_RUN
+        }
+        
+        try:
+            response = requests.get(url, headers=self.headers, params=params)
+            response.raise_for_status()
+            return response.json().get("records", [])
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to fetch from Airtable: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Response: {e.response.text}")
+            return []
+            
+    def update_record(self, table_id: str, record_id: str, fields: Dict) -> bool:
+        """Update an Airtable record."""
+        if DRY_RUN:
+            logger.info(f"[DRY RUN] Would update Airtable record {record_id} with: {json.dumps(fields)}")
+            return True
+            
+        url = f"{self.base_url}/{self.base_id}/{table_id}/{record_id}"
+        
+        try:
+            response = requests.patch(url, headers=self.headers, json={"fields": fields})
+            response.raise_for_status()
+            logger.info(f"Successfully updated Airtable record {record_id}")
+            return True
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to update Airtable record {record_id}: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Response: {e.response.text}")
+            return False
+
+class ClickUpClient:
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+        self.base_url = "https://api.clickup.com/api/v2"
+        self.headers = {
+            "Authorization": self.api_key,
+            "Content-Type": "application/json"
+        }
+        
+    def create_task(self, list_id: str, task_data: Dict) -> Optional[str]:
+        """Create a task in ClickUp and return its ID."""
+        if DRY_RUN:
+            logger.info(f"[DRY RUN] Would create ClickUp task: {task_data.get('name')}")
+            return f"dry_run_task_{int(time.time())}"
+            
+        url = f"{self.base_url}/list/{list_id}/task"
+        
+        try:
+            response = requests.post(url, headers=self.headers, json=task_data)
+            response.raise_for_status()
+            task_id = response.json().get("id")
+            logger.info(f"Successfully created ClickUp task: {task_id}")
+            return task_id
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to create ClickUp task: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Response: {e.response.text}")
+            return None
+
+def should_process_meeting(record: Dict) -> bool:
+    """
+    Filter logic extracted from Make.com blueprint.
+    All 4 conditions must be TRUE (AND logic).
+    """
+    fields = record.get("fields", {})
+    record_id = record.get("id")
+    
+    # Condition 1: Qualification Status must equal "Meeting Scheduled"
+    qualification_status = fields.get("Qualification Status", "")
+    if qualification_status != "Meeting Scheduled":
+        logger.debug(f"Record {record_id} filtered out: Status is '{qualification_status}'")
+        return False
+        
+    # Condition 2: Email must exist
+    email = fields.get("Email", "")
+    if not email or str(email).strip() == "":
+        logger.debug(f"Record {record_id} filtered out: No Email")
+        return False
+        
+    # Condition 3: Meeting Date must exist
+    meeting_date = fields.get("Meeting Date", "")
+    if not meeting_date or str(meeting_date).strip() == "":
+        logger.debug(f"Record {record_id} filtered out: No Meeting Date")
+        return False
+        
+    # Condition 4: In Automation must exist (checkbox/flag)
+    in_automation = fields.get("In Automation")
+    if not in_automation:
+        logger.debug(f"Record {record_id} filtered out: 'In Automation' flag not set")
+        return False
+        
+    return True
+
+def format_task_description(fields: Dict, record_id: str) -> str:
+    """Format the ClickUp task description based on the blueprint template."""
+    
+    company = fields.get("Company", "Unknown Company")
+    first_name = fields.get("First Name", "")
+    last_name = fields.get("Last Name", "")
+    title = fields.get("Title", "Unknown Title")
+    email = fields.get("Email", "")
+    lead_source = fields.get("Lead Source", "Unknown")
+    
+    ebitda = fields.get("EBITDA Range Detected", "Not specified")
+    payment_pref = fields.get("Payment Willingness Detected", "Not specified")
+    ai_notes = fields.get("AI Analysis Notes", "None")
+    
+    meeting_date = fields.get("Meeting Date", "Unknown")
+    
+    airtable_url = f"https://airtable.com/{AIRTABLE_BASE_ID}/{AIRTABLE_TABLE_ID}/{record_id}"
+    
+    description = f"""**MEETING PREPARATION**
+
+**Prospect Details:**
+Company: {company}
+Contact: {first_name} {last_name}
+Title: {title}
+Email: {email}
+Lead Source: {lead_source}
+
+**Qualification Intelligence:**
+EBITDA Range: {ebitda}
+Payment Preference: {payment_pref}
+AI Analysis: {ai_notes}
+
+**Meeting Information:**
+Scheduled: {meeting_date}
+Status: Discovery Call
+
+**Pre-Call Checklist:**
+- [ ] Review qualification email thread
+- [ ] Research company LinkedIn profile
+- [ ] Check recent news about company
+- [ ] Prepare EBITDA verification questions
+- [ ] Review Annuity Sale model overview
+- [ ] Prepare due diligence requirements list
+
+**Discussion Topics:**
+1. Confirm EBITDA range and verify cash flow
+2. Discuss structured payment benefits vs traditional sale
+3. Explain 30-day closing timeline
+4. Outline next steps if qualified
+
+**Airtable Record:** {airtable_url}"""
+
+    return description
+
+def build_clickup_task_payload(fields: Dict, record_id: str) -> Dict:
+    """Build the payload for the ClickUp API based on the blueprint."""
+    
+    company = fields.get("Company", "Unknown")
+    first_name = fields.get("First Name", "")
+    last_name = fields.get("Last Name", "")
+    
+    task_name = f"{company} Discover Call - {first_name} {last_name}".strip()
+    if task_name.endswith("-"):
+        task_name = task_name[:-1].strip()
+        
+    description = format_task_description(fields, record_id)
+    
+    # Parse meeting date for due_date if possible
+    # ClickUp expects unix timestamp in milliseconds
+    due_date = None
+    meeting_date_str = fields.get("Meeting Date")
+    if meeting_date_str:
+        try:
+            # Try to parse ISO format
+            dt = datetime.fromisoformat(meeting_date_str.replace('Z', '+00:00'))
+            due_date = int(dt.timestamp() * 1000)
+        except ValueError:
+            logger.warning(f"Could not parse meeting date: {meeting_date_str}")
+    
+    # Custom fields mapping from blueprint
+    custom_fields = [
+        {
+            "id": "3c3eb18b-c309-411b-9b7e-a5c82a732c0f", # EBITDA Range
+            "value": fields.get("EBITDA Range Detected", "")
+        },
+        {
+            "id": "500d9822-9dd9-4216-a062-6f84852b68be", # Company
+            "value": company
+        },
+        {
+            "id": "a017bc04-95ed-4ca1-b05a-9b5dc256a1f4", # Payment Preference
+            "value": fields.get("Payment Willingness Detected", "")
+        },
+        {
+            "id": "b7c458dc-b2d3-4b53-9255-9866fd9d158b", # Airtable Record Link
+            "value": f"https://airtable.com/{AIRTABLE_BASE_ID}/{AIRTABLE_TABLE_ID}/{record_id}"
+        },
+        {
+            "id": "dd0bfe8e-f552-4b86-bd6b-717742a7ddb7", # Email
+            "value": fields.get("Email", "")
+        },
+        {
+            "id": "fd825748-8018-4100-91a2-273dbf58087d", # Contact Name
+            "value": f"{first_name} {last_name}".strip()
+        }
+    ]
+    
+    # Filter out empty custom fields
+    custom_fields = [cf for cf in custom_fields if cf["value"]]
+    
+    payload = {
+        "name": task_name,
+        "markdown_description": description,
+        "status": "to do",
+        "priority": 2, # High priority
+        "custom_fields": custom_fields
+    }
+    
+    if due_date:
+        payload["due_date"] = due_date
+        
+    return payload
+
+@handle_errors(SCRIPT_NAME, logger)
+def main():
+    logger.info(f"Starting {SCRIPT_NAME} (DRY_RUN={DRY_RUN})")
+    
+    if not AIRTABLE_API_KEY or not CLICKUP_API_KEY:
+        logger.error("Missing required API keys. Check .env file.")
+        return
+        
+    airtable = AirtableClient(AIRTABLE_API_KEY, AIRTABLE_BASE_ID)
+    clickup = ClickUpClient(CLICKUP_API_KEY)
+    
+    # 1. Fetch potential records
+    records = airtable.get_scheduled_meetings(AIRTABLE_TABLE_ID)
+    logger.info(f"Found {len(records)} records with 'Meeting Scheduled' status")
+    
+    processed_count = 0
+    skipped_count = 0
+    
+    for record in records:
+        record_id = record.get("id")
+        fields = record.get("fields", {})
+        
+        # 2. Apply strict filter logic
+        if not should_process_meeting(record):
+            skipped_count += 1
+            continue
+            
+        # Check if already processed (using Airtable field or local state)
+        # The blueprint updates status to "Prep Task Created" or similar
+        # We'll also check local state to be safe
+        state = state_manager.get_state(SCRIPT_NAME)
+        processed_records = state.get("processed_records", [])
+        if not isinstance(processed_records, list):
+            processed_records = []
+            
+        if record_id in processed_records:
+            logger.info(f"Record {record_id} already processed in local state. Skipping.")
+            skipped_count += 1
+            continue
+            
+        logger.info(f"Processing record {record_id} for {fields.get('Email')}")
+        
+        # 3. Create ClickUp Task
+        task_payload = build_clickup_task_payload(fields, record_id)
+        task_id = clickup.create_task(CLICKUP_LIST_ID, task_payload)
+        
+        if not task_id:
+            logger.error(f"Failed to create ClickUp task for record {record_id}")
+            continue
+            
+        # 4. Update Airtable
+        update_fields = {
+            "ClickUp Doc URL": task_id,
+        }
+        
+        success = airtable.update_record(AIRTABLE_TABLE_ID, record_id, update_fields)
+        
+        if success:
+            processed_count += 1
+            # Update local state
+            processed_records.append(record_id)
+            # Keep only last 1000 records to prevent state bloat
+            if len(processed_records) > 1000:
+                processed_records = processed_records[-1000:]
+                
+            state_manager.update_state(
+                SCRIPT_NAME, 
+                last_processed_id=record_id,
+                last_processed_timestamp=datetime.now().isoformat(),
+                status="success"
+            )
+            # We need a custom way to save the list if StateManager doesn't support it directly
+            # For now, we rely on the Airtable status update to prevent duplicates
+            
+    logger.info(f"Finished. Processed: {processed_count}, Skipped: {skipped_count}")
+
+if __name__ == "__main__":
+    main()

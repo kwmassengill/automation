@@ -1,0 +1,365 @@
+#!/usr/bin/env python3
+"""
+Script 7: Gmail Reply → AI Qualification
+
+Watches for new email replies and uses AI to automatically qualify prospects.
+Updates Airtable records with qualification status and marks emails as read.
+
+Trigger: New emails in Gmail inbox
+Actions:
+  1. Check for new emails
+  2. Parse email content
+  3. Send to AI for qualification
+  4. Update Airtable record with qualification status
+  5. Mark email as read
+
+Schedule: Every 5 minutes via cron
+"""
+
+import os
+import sys
+import json
+import base64
+from datetime import datetime
+from pathlib import Path
+from typing import List, Dict, Any, Optional, Tuple
+
+# Add parent directory to path for shared utilities
+sys.path.insert(0, str(Path(__file__).parent))
+
+from shared_utils import setup_logger, StateManager, send_error_notification, handle_errors
+
+# Third-party imports
+import requests
+from dotenv import load_dotenv
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from email.mime.text import MIMEText
+
+# Load environment variables
+load_dotenv()
+
+# Configuration
+SCRIPT_NAME = "script_07_gmail_reply_ai_qualification"
+GOOGLE_TOKEN_FILE = os.getenv("GOOGLE_TOKEN_FILE", "/Users/kevinmassengill/Automations/config/google_token.json")
+
+AIRTABLE_API_KEY = os.getenv("AIRTABLE_API_KEY")
+AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID", "appoNkgoKHAUXgXV9")
+AIRTABLE_TABLE_ID = "tblxEhVek8ldTQMW1"  # Prospects table
+
+# OpenAI API for AI qualification
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+# Initialize logger and state manager
+logger = setup_logger(SCRIPT_NAME)
+state_manager = StateManager()
+
+
+class GmailClient:
+    """Client for Gmail API operations."""
+    
+    def __init__(self, token_file: str):
+        self.token_file = token_file
+        self.service = self._get_service()
+    
+    def _get_service(self):
+        """Get Gmail service."""
+        try:
+            creds = Credentials.from_authorized_user_file(self.token_file)
+            return build("gmail", "v1", credentials=creds)
+        except Exception as e:
+            logger.error(f"Error initializing Gmail service: {str(e)}")
+            raise
+    
+    def get_new_emails(self, query: str = "is:unread from:*", max_results: int = 10) -> List[Dict[str, Any]]:
+        """Get new emails from Gmail."""
+        try:
+            results = self.service.users().messages().list(
+                userId="me",
+                q=query,
+                maxResults=max_results
+            ).execute()
+            
+            messages = results.get("messages", [])
+            logger.info(f"Found {len(messages)} new emails")
+            
+            email_data = []
+            for msg in messages:
+                msg_data = self.get_message_details(msg["id"])
+                if msg_data:
+                    email_data.append(msg_data)
+            
+            return email_data
+        except Exception as e:
+            logger.error(f"Error getting emails: {str(e)}")
+            raise
+    
+    def get_message_details(self, message_id: str) -> Optional[Dict[str, Any]]:
+        """Get detailed information about a message."""
+        try:
+            message = self.service.users().messages().get(
+                userId="me",
+                id=message_id,
+                format="full"
+            ).execute()
+            
+            headers = message["payload"]["headers"]
+            subject = next((h["value"] for h in headers if h["name"] == "Subject"), "")
+            sender = next((h["value"] for h in headers if h["name"] == "From"), "")
+            
+            # Get email body
+            body = ""
+            if "parts" in message["payload"]:
+                for part in message["payload"]["parts"]:
+                    if part["mimeType"] == "text/plain":
+                        data = part["body"].get("data", "")
+                        if data:
+                            body = base64.urlsafe_b64decode(data).decode("utf-8")
+                            break
+            else:
+                data = message["payload"]["body"].get("data", "")
+                if data:
+                    body = base64.urlsafe_b64decode(data).decode("utf-8")
+            
+            return {
+                "id": message_id,
+                "subject": subject,
+                "sender": sender,
+                "body": body,
+                "timestamp": datetime.now().isoformat()
+            }
+        except Exception as e:
+            logger.error(f"Error getting message details: {str(e)}")
+            return None
+    
+    def mark_as_read(self, message_id: str) -> bool:
+        """Mark a message as read."""
+        try:
+            self.service.users().messages().modify(
+                userId="me",
+                id=message_id,
+                body={"removeLabelIds": ["UNREAD"]}
+            ).execute()
+            logger.info(f"Marked message {message_id} as read")
+            return True
+        except Exception as e:
+            logger.error(f"Error marking message as read: {str(e)}")
+            return False
+
+
+class AIQualificationClient:
+    """Client for AI-based prospect qualification."""
+    
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+        self.base_url = "https://api.openai.com/v1"
+    
+    def qualify_prospect(self, email_body: str, sender: str) -> Dict[str, Any]:
+        """
+        Use AI to qualify a prospect based on email content.
+        
+        Returns:
+            Dictionary with qualification results
+        """
+        if not self.api_key:
+            logger.warning("OpenAI API key not configured. Skipping AI qualification.")
+            return {"qualified": False, "reason": "AI not configured"}
+        
+        prompt = f"""
+You are a business development specialist. Analyze the following email reply and determine if this prospect 
+is qualified for further engagement.
+
+Email from: {sender}
+Email body:
+{email_body}
+
+Provide a JSON response with:
+1. "qualified": true/false
+2. "confidence": 0-100 (confidence level)
+3. "reason": brief explanation
+4. "suggested_status": "Qualified", "Pending", or "Not Qualified"
+5. "next_steps": recommended next action
+
+Respond ONLY with valid JSON, no other text.
+"""
+        
+        try:
+            response = requests.post(
+                f"{self.base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "gpt-4.1-mini",
+                    "messages": [
+                        {"role": "system", "content": "You are a business development specialist."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": 0.3
+                }
+            )
+            
+            response.raise_for_status()
+            result = response.json()
+            
+            # Extract the AI response
+            ai_response = result["choices"][0]["message"]["content"]
+            
+            # Parse JSON response
+            qualification = json.loads(ai_response)
+            logger.info(f"AI qualification result: {qualification}")
+            
+            return qualification
+        
+        except Exception as e:
+            logger.error(f"Error in AI qualification: {str(e)}")
+            return {"qualified": False, "reason": f"AI error: {str(e)}"}
+
+
+class AirtableClient:
+    """Client for Airtable API operations."""
+    
+    def __init__(self, api_key: str, base_id: str):
+        self.api_key = api_key
+        self.base_id = base_id
+        self.base_url = "https://api.airtable.com/v0"
+    
+    def search_records(self, table_id: str, filter_formula: str) -> List[Dict[str, Any]]:
+        """Search for records in Airtable."""
+        url = f"{self.base_url}/{self.base_id}/{table_id}"
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        params = {"filterByFormula": filter_formula}
+        
+        try:
+            response = requests.get(url, headers=headers, params=params)
+            response.raise_for_status()
+            return response.json().get("records", [])
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error searching Airtable records: {str(e)}")
+            raise
+    
+    def update_record(self, table_id: str, record_id: str, fields: Dict[str, Any]) -> bool:
+        """Update a record in Airtable."""
+        url = f"{self.base_url}/{self.base_id}/{table_id}/{record_id}"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        data = {"fields": fields}
+        
+        try:
+            response = requests.patch(url, headers=headers, json=data)
+            response.raise_for_status()
+            logger.info(f"Updated Airtable record {record_id}")
+            return True
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error updating Airtable record: {str(e)}")
+            raise
+
+
+def extract_email_from_sender(sender: str) -> str:
+    """Extract email address from sender string."""
+    import re
+    match = re.search(r'<(.+?)>', sender)
+    if match:
+        return match.group(1)
+    return sender.split()[-1] if sender else ""
+
+
+def find_prospect_by_email(email: str) -> Optional[str]:
+    """Find a prospect in Airtable by email address."""
+    airtable = AirtableClient(AIRTABLE_API_KEY, AIRTABLE_BASE_ID)
+    
+    try:
+        filter_formula = f'{{Email}} = "{email}"'
+        records = airtable.search_records(AIRTABLE_TABLE_ID, filter_formula)
+        
+        if records:
+            return records[0]["id"]
+        return None
+    except Exception as e:
+        logger.error(f"Error finding prospect: {str(e)}")
+        return None
+
+
+@handle_errors(SCRIPT_NAME, logger)
+def main():
+    """Main execution function."""
+    logger.info(f"Starting {SCRIPT_NAME}")
+    
+    try:
+        gmail = GmailClient(GOOGLE_TOKEN_FILE)
+        ai_client = AIQualificationClient(OPENAI_API_KEY)
+        airtable = AirtableClient(AIRTABLE_API_KEY, AIRTABLE_BASE_ID)
+        
+        # Get new emails
+        emails = gmail.get_new_emails(max_results=10)
+        
+        if not emails:
+            logger.info("No new emails to process")
+            state_manager.update_state(SCRIPT_NAME, status="success")
+            return
+        
+        # Process each email
+        processed_count = 0
+        for email in emails:
+            logger.info(f"Processing email from {email['sender']}")
+            
+            # Extract email address from sender
+            sender_email = extract_email_from_sender(email["sender"])
+            
+            # Find prospect in Airtable
+            prospect_id = find_prospect_by_email(sender_email)
+            
+            if not prospect_id:
+                logger.warning(f"Prospect not found for email: {sender_email}")
+                gmail.mark_as_read(email["id"])
+                continue
+            
+            # Use AI to qualify the prospect
+            qualification = ai_client.qualify_prospect(email["body"], email["sender"])
+            
+            # Update Airtable record
+            fields = {
+                "Status": qualification.get("suggested_status", "Pending"),
+                "AI Qualification": qualification.get("reason", ""),
+                "AI Confidence": qualification.get("confidence", 0),
+                "Last Email Reply": email["body"][:500],  # First 500 chars
+                "Last Email Date": email["timestamp"]
+            }
+            
+            if airtable.update_record(AIRTABLE_TABLE_ID, prospect_id, fields):
+                # Mark email as read
+                gmail.mark_as_read(email["id"])
+                processed_count += 1
+                
+                # Update state
+                state_manager.update_state(
+                    SCRIPT_NAME,
+                    last_processed_id=email["id"],
+                    last_processed_timestamp=datetime.now().isoformat(),
+                    status="success"
+                )
+        
+        logger.info(f"Successfully processed {processed_count}/{len(emails)} emails")
+        state_manager.update_state(SCRIPT_NAME, status="success")
+    
+    except Exception as e:
+        logger.error(f"Error in main execution: {str(e)}", exc_info=True)
+        state_manager.increment_error_count(SCRIPT_NAME)
+        send_error_notification(
+            SCRIPT_NAME,
+            f"Error processing email replies: {str(e)}",
+            str(e),
+            logger
+        )
+        raise
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        logger.error(f"Fatal error: {str(e)}", exc_info=True)
+        sys.exit(1)

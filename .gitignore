@@ -1,0 +1,8 @@
+config/.env
+config/google_token.json
+config/credentials.json
+logs/
+*.log
+*.pyc
+__pycache__/
+.DS_Store

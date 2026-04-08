@@ -1,0 +1,531 @@
+#!/usr/bin/env python3
+"""
+Script 6: Qualified Prospect → ClickUp Deal Pipeline
+
+Purpose:
+    Automatically create or update ClickUp deal pipeline records when prospects 
+    reach "Meeting Invite Sent" status in Airtable.
+
+Trigger:
+    Event-driven via Airtable change (when Qualification Status = "Meeting Invite Sent")
+
+Author: Manus AI
+Date: 2026-03-24
+Version: 1.0.0
+"""
+
+import os
+import sys
+import json
+import sqlite3
+import logging
+import time
+import smtplib
+from pathlib import Path
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Tuple
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from dotenv import load_dotenv
+import requests
+
+# ============================================================================
+# SAFEGUARD SETTINGS - CHANGE THESE FOR TESTING/PRODUCTION
+# ============================================================================
+DRY_RUN = False  # Set to False for production
+MAX_RECORDS_PER_RUN = 1  # Prevent mass operations
+ENABLE_EMAIL_NOTIFICATIONS = True  # Send email on errors
+
+# ============================================================================
+# CONFIGURATION & ENVIRONMENT SETUP
+# ============================================================================
+
+# Load environment variables from config directory FIRST
+config_env_path = Path(os.path.expanduser("~/Automations/config/.env"))
+if config_env_path.exists():
+    load_dotenv(config_env_path)
+else:
+    load_dotenv()
+
+# API Configuration
+AIRTABLE_API_KEY = os.getenv("AIRTABLE_API_KEY")
+AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
+CLICKUP_API_KEY = os.getenv("CLICKUP_API_KEY")
+CLICKUP_TEAM_ID = os.getenv("CLICKUP_TEAM_ID", "9017878084")
+CLICKUP_LIST_ID = os.getenv("CLICKUP_LIST_ID", "901710776017")
+
+# Directory Configuration
+CONFIG_DIR = Path(os.getenv("CONFIG_DIR", os.path.expanduser("~/Automations/config")))
+LOG_DIR = Path(os.getenv("LOG_DIR", os.path.expanduser("~/Automations/logs")))
+STATE_DB_PATH = Path(os.getenv("STATE_DB_PATH", os.path.expanduser("~/Automations/config/state.db")))
+
+# Email Configuration
+SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+EMAIL_FROM = os.getenv("EMAIL_FROM")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+EMAIL_TO = os.getenv("EMAIL_TO")
+
+# Create directories if they don't exist
+CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+# ============================================================================
+# LOGGING SETUP
+# ============================================================================
+
+def setup_logger(name: str) -> logging.Logger:
+    """Configure logging with both file and console output."""
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+    
+    # Create formatters
+    detailed_formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    simple_formatter = logging.Formatter(
+        '%(asctime)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
+    # File handler for all logs
+    log_file = LOG_DIR / f"script_06_qualified_prospect_clickup_{datetime.now().strftime('%Y%m%d')}.log"
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(detailed_formatter)
+    logger.addHandler(file_handler)
+    
+    # File handler for errors only
+    error_log_file = LOG_DIR / "script_06_qualified_prospect_clickup_error.log"
+    error_handler = logging.FileHandler(error_log_file)
+    error_handler.setLevel(logging.ERROR)
+    error_handler.setFormatter(detailed_formatter)
+    logger.addHandler(error_handler)
+    
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(simple_formatter)
+    logger.addHandler(console_handler)
+    
+    return logger
+
+logger = setup_logger("script_06_qualified_prospect_clickup")
+
+# ============================================================================
+# STATE MANAGEMENT
+# ============================================================================
+
+class StateManager:
+    """Manage script state using SQLite database."""
+    
+    def __init__(self, db_path: Path):
+        self.db_path = db_path
+        self._init_db()
+    
+    def _init_db(self):
+        """Initialize the state database."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS script_06_state (
+                        state_key TEXT PRIMARY KEY,
+                        last_processed_id TEXT,
+                        last_processed_timestamp TEXT,
+                        clickup_task_id TEXT,
+                        status TEXT,
+                        created_at TEXT,
+                        updated_at TEXT
+                    )
+                """)
+                conn.commit()
+            logger.debug(f"State database initialized at {self.db_path}")
+        except Exception as e:
+            logger.error(f"Failed to initialize state database: {str(e)}")
+            raise
+    
+    def get_state(self, state_key: str) -> Dict:
+        """Retrieve state for a given key."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT * FROM script_06_state WHERE state_key = ?",
+                    (state_key,)
+                )
+                row = cursor.fetchone()
+                
+                if row:
+                    return {
+                        'state_key': row[0],
+                        'last_processed_id': row[1],
+                        'last_processed_timestamp': row[2],
+                        'clickup_task_id': row[3],
+                        'status': row[4],
+                        'created_at': row[5],
+                        'updated_at': row[6]
+                    }
+                return {}
+        except Exception as e:
+            logger.error(f"Failed to get state for {state_key}: {str(e)}")
+            return {}
+    
+    def update_state(self, state_key: str, **kwargs):
+        """Update state for a given key."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Check if key exists
+                cursor.execute("SELECT state_key FROM script_06_state WHERE state_key = ?", (state_key,))
+                exists = cursor.fetchone() is not None
+                
+                now = datetime.now().isoformat()
+                
+                if exists:
+                    # Update existing
+                    set_clause = ", ".join([f"{k} = ?" for k in kwargs.keys()] + ["updated_at = ?"])
+                    values = list(kwargs.values()) + [now, state_key]
+                    cursor.execute(
+                        f"UPDATE script_06_state SET {set_clause} WHERE state_key = ?",
+                        values
+                    )
+                else:
+                    # Insert new
+                    columns = ["state_key"] + list(kwargs.keys()) + ["created_at", "updated_at"]
+                    placeholders = ", ".join(["?"] * len(columns))
+                    values = [state_key] + list(kwargs.values()) + [now, now]
+                    cursor.execute(
+                        f"INSERT INTO script_06_state ({', '.join(columns)}) VALUES ({placeholders})",
+                        values
+                    )
+                
+                conn.commit()
+                logger.debug(f"State updated for {state_key}")
+        except Exception as e:
+            logger.error(f"Failed to update state for {state_key}: {str(e)}")
+            raise
+
+state_manager = StateManager(STATE_DB_PATH)
+
+# ============================================================================
+# API UTILITIES
+# ============================================================================
+
+def api_call_with_retry(
+    method: str,
+    url: str,
+    headers: Dict,
+    data: Optional[Dict] = None,
+    params: Optional[Dict] = None,
+    max_retries: int = 3,
+    timeout: int = 10
+) -> requests.Response:
+    """Make API call with exponential backoff retry logic."""
+    for attempt in range(max_retries):
+        try:
+            if method.upper() == "GET":
+                response = requests.get(url, headers=headers, params=params, timeout=timeout)
+            elif method.upper() == "POST":
+                response = requests.post(url, headers=headers, json=data, timeout=timeout)
+            elif method.upper() == "PUT":
+                response = requests.put(url, headers=headers, json=data, timeout=timeout)
+            else:
+                raise ValueError(f"Unsupported HTTP method: {method}")
+            
+            response.raise_for_status()
+            return response
+        
+        except requests.exceptions.RequestException as e:
+            if attempt < max_retries - 1:
+                wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                logger.warning(f"API call failed (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s: {str(e)}")
+                time.sleep(wait_time)
+            else:
+                logger.error(f"API call failed after {max_retries} attempts: {str(e)}")
+                raise
+
+# ============================================================================
+# AIRTABLE INTEGRATION
+# ============================================================================
+
+def get_qualified_prospects() -> List[Dict]:
+    """
+    Query Airtable for prospects with Qualification Status = "Meeting Invite Sent"
+    and In Automation field exists.
+    """
+    try:
+        logger.info("Querying Airtable for prospects with Meeting Invite Sent status...")
+        
+        # Airtable API endpoint
+        url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/Prospects"
+        
+        # Filter formula: Qualification Status = "Meeting Invite Sent" AND In Automation exists
+        filter_formula = 'AND({Qualification Status} = "Meeting Invite Sent", {In Automation} != BLANK(), {ClickUp Task Created} != 1)'
+        
+        params = {
+            "filterByFormula": filter_formula,
+            "maxRecords": MAX_RECORDS_PER_RUN
+        }
+        
+        headers = {
+            "Authorization": f"Bearer {AIRTABLE_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        response = api_call_with_retry("GET", url, headers, data=None, params=params)
+        data = response.json()
+        
+        records = data.get("records", [])
+        logger.info(f"Found {len(records)} prospects with Meeting Invite Sent status to process")
+        
+        return records
+    
+    except Exception as e:
+        logger.error(f"Failed to query Airtable: {str(e)}")
+        raise
+
+def extract_prospect_data(airtable_record: Dict) -> Dict:
+    """Extract relevant prospect data from Airtable record."""
+    try:
+        fields = airtable_record.get("fields", {})
+        
+        prospect_data = {
+            "airtable_record_id": airtable_record.get("id"),
+            "company": fields.get("Company", ""),
+            "first_name": fields.get("First Name", ""),
+            "last_name": fields.get("Last Name", ""),
+            "email": fields.get("Email", ""),
+            "title": fields.get("Title", ""),
+            "lead_source": fields.get("Lead Source", ""),
+            "qualification_score": fields.get("Qualification Score", ""),
+            "ai_analysis_notes": fields.get("AI Analysis Notes", ""),
+        }
+        
+        logger.debug(f"Extracted prospect data: {prospect_data['company']} - {prospect_data['first_name']} {prospect_data['last_name']}")
+        return prospect_data
+    
+    except Exception as e:
+        logger.error(f"Failed to extract prospect data: {str(e)}")
+        raise
+
+# ============================================================================
+# CLICKUP INTEGRATION
+# ============================================================================
+
+def create_clickup_task(prospect_data: Dict) -> Optional[str]:
+    """
+    Create a ClickUp task for the qualified prospect.
+    Returns the ClickUp task ID if successful, None otherwise.
+    """
+    try:
+        logger.info(f"Creating ClickUp task for {prospect_data['company']} - {prospect_data['first_name']} {prospect_data['last_name']}")
+        
+        # ClickUp API endpoint
+        url = f"https://api.clickup.com/api/v2/list/{CLICKUP_LIST_ID}/task"
+        
+        # Build task name
+        task_name = f"{prospect_data['company']} - {prospect_data['first_name']} {prospect_data['last_name']}"
+        
+        # Build task description (markdown)
+        task_description = f"""New qualified prospect from {prospect_data['lead_source']}.
+
+**Contact Information:**
+- Name: {prospect_data['first_name']} {prospect_data['last_name']}
+- Email: {prospect_data['email']}
+- Company: {prospect_data['company']}
+- Title: {prospect_data['title']}
+
+**Qualification Details:**
+- Qualification Score: {prospect_data['qualification_score']}
+- AI Analysis: {prospect_data['ai_analysis_notes']}
+
+**Next Steps:**
+- [ ] Review qualification details
+- [ ] Schedule discovery call
+- [ ] Prepare for meeting
+
+**Airtable Record:** https://airtable.com/{AIRTABLE_BASE_ID}/{prospect_data['airtable_record_id']}
+"""
+        
+        # Calculate due date (3 days from now)
+        due_date = (datetime.now() + timedelta(days=3)).timestamp() * 1000  # ClickUp uses milliseconds
+        
+        # Prepare request payload
+        payload = {
+            "name": task_name,
+            "description": task_description,
+            "due_date": int(due_date),
+            "priority": 3,  # High priority
+            "notify_all": False,
+            "custom_fields": [
+                {
+                    "id": "04337311-ead6-45a8-9b7e-cb1446e277ae",  # Company
+                    "value": prospect_data['company']
+                },
+                {
+                    "id": "b357b002-bcb7-41d1-8d3f-8421ea63a719",  # Email
+                    "value": prospect_data['email']
+                },
+                {
+                    "id": "fd825748-8018-4100-91a2-273dbf58087d",  # Contact Name
+                    "value": f"{prospect_data['first_name']} {prospect_data['last_name']}"
+                },
+                {
+                    "id": "1a4828a2-c794-4b63-92b6-18501e389d2f",  # Airtable Record
+                    "value": f"https://airtable.com/{AIRTABLE_BASE_ID}/{prospect_data['airtable_record_id']}"
+                }
+            ]
+        }
+        
+        headers = {
+            "Authorization": CLICKUP_API_KEY,
+            "Content-Type": "application/json"
+        }
+        
+        if DRY_RUN:
+            logger.info(f"[DRY RUN] Would create ClickUp task: {json.dumps(payload, indent=2)}")
+            return "DRY_RUN_TASK_ID"
+        
+        response = api_call_with_retry("POST", url, headers, data=payload)
+        task_data = response.json()
+        
+        task_id = task_data.get("id")
+        logger.info(f"Successfully created ClickUp task {task_id}")
+        return task_id
+    
+    except Exception as e:
+        logger.error(f"Failed to create ClickUp task: {str(e)}")
+        raise
+
+# ============================================================================
+# EMAIL NOTIFICATIONS
+# ============================================================================
+
+def send_error_email(subject: str, error_message: str):
+    """Send error notification email."""
+    if not ENABLE_EMAIL_NOTIFICATIONS or not EMAIL_FROM or not EMAIL_PASSWORD or not EMAIL_TO:
+        logger.debug("Email notifications disabled or not configured")
+        return
+    
+    try:
+        logger.info(f"Sending error email: {subject}")
+        
+        msg = MIMEMultipart()
+        msg['From'] = EMAIL_FROM
+        msg['To'] = EMAIL_TO
+        msg['Subject'] = f"[Script 6 Error] {subject}"
+        
+        body = f"""
+Script 6 encountered an error:
+
+Subject: {subject}
+Time: {datetime.now().isoformat()}
+DRY_RUN: {DRY_RUN}
+
+Error Details:
+{error_message}
+
+Log Location: {LOG_DIR}
+"""
+        
+        msg.attach(MIMEText(body, 'plain'))
+        
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls()
+            server.login(EMAIL_FROM, EMAIL_PASSWORD)
+            server.send_message(msg)
+        
+        logger.info("Error email sent successfully")
+    
+    except Exception as e:
+        logger.error(f"Failed to send error email: {str(e)}")
+
+# ============================================================================
+# MAIN EXECUTION
+# ============================================================================
+
+def process_qualified_prospects():
+    """Main function to process qualified prospects."""
+    try:
+        logger.info("=" * 80)
+        logger.info("Script 6: Qualified Prospect → ClickUp Deal Pipeline")
+        logger.info(f"Start Time: {datetime.now().isoformat()}")
+        logger.info(f"DRY_RUN: {DRY_RUN}")
+        logger.info("=" * 80)
+        
+        # Validate configuration
+        if not all([AIRTABLE_API_KEY, AIRTABLE_BASE_ID, CLICKUP_API_KEY]):
+            raise ValueError("Missing required API credentials in environment variables")
+        
+        # Get qualified prospects from Airtable
+        prospects = get_qualified_prospects()
+        
+        if not prospects:
+            logger.info("No qualified prospects to process")
+            return
+        
+        # Process each prospect
+        processed_count = 0
+        success_count = 0
+        error_count = 0
+        
+        for prospect_record in prospects:
+            try:
+                record_id = prospect_record.get("id")
+                state_key = f"script_06_{record_id}_to_clickup"
+                
+                # Check if already processed
+                state = state_manager.get_state(state_key)
+                if state.get("status") == "success":
+                    logger.info(f"Record {record_id} already synced to ClickUp. Skipping.")
+                    continue
+                
+                # Extract prospect data
+                prospect_data = extract_prospect_data(prospect_record)
+                
+                # Create ClickUp task
+                task_id = create_clickup_task(prospect_data)
+                
+                # Update state
+                if not DRY_RUN:
+                    state_manager.update_state(
+                        state_key,
+                        last_processed_id=record_id,
+                        last_processed_timestamp=datetime.now().isoformat(),
+                        clickup_task_id=task_id,
+                        status="success"
+                    )
+                
+                logger.info(f"Successfully processed prospect {prospect_data['company']}")
+                success_count += 1
+            
+            except Exception as e:
+                error_count += 1
+                logger.error(f"Error processing prospect {record_id}: {str(e)}")
+                send_error_email(
+                    f"Failed to process prospect {record_id}",
+                    str(e)
+                )
+            
+            finally:
+                processed_count += 1
+        
+        # Summary
+        logger.info("=" * 80)
+        logger.info(f"Processing Summary:")
+        logger.info(f"  Total Processed: {processed_count}")
+        logger.info(f"  Successful: {success_count}")
+        logger.info(f"  Errors: {error_count}")
+        logger.info(f"End Time: {datetime.now().isoformat()}")
+        logger.info("=" * 80)
+    
+    except Exception as e:
+        logger.error(f"Critical error in script execution: {str(e)}")
+        send_error_email("Critical Script Error", str(e))
+        sys.exit(1)
+
+if __name__ == "__main__":
+    process_qualified_prospects()
