@@ -4,7 +4,7 @@
 
 This project converts 12 Make.com automation blueprints into persistent local Python scripts that run on macOS using LaunchAgents. All scripts execute locally with zero Manus involvement, preventing unexpected charges and ensuring reliability.
 
-**Status:** 🟢 Active - Scripts 1 & 7 running, Scripts 2-6 & 8-11 in development
+**Status:** 🟢 Active - Scripts 1, 6, 7 & 8 running, Scripts 2-5 & 9-11 in development
 
 **Cost:** $0 - All automation runs locally on your Mac
 
@@ -34,12 +34,6 @@ for plist in ~/Library/LaunchAgents/com.meraglim.*.plist; do
 done
 ```
 
-## ⚠️ NEW AGENT ONBOARDING
-
-**If you are a new Manus agent starting a task in this project, STOP and read `NEW_TASK_ONBOARDING.md` and `SCRIPTS_REGISTRY.md` immediately.**
-
-These two files are the single source of truth for the project architecture and the current status of all 20+ scripts. Do not rely on this README for script status, as it may be outdated.
-
 ## Project Structure
 
 ```
@@ -54,9 +48,9 @@ These two files are the single source of truth for the project architecture and 
 │   ├── script_03_qualified_prospect_calendar_invite.py ⏳ Pending
 │   ├── script_04_not_qualified_polite_decline.py    ⏳ Pending
 │   ├── script_05_qualified_7day_followup.py         ⏳ Pending
-│   ├── script_06_qualified_prospect_clickup_deal.py ⏳ Pending
+│   ├── script_06_qualified_prospect_clickup_deal.py ✅ ACTIVE
 │   ├── script_07_gmail_reply_ai_qualification.py    ✅ ACTIVE
-│   ├── script_08_meeting_scheduled_clickup_prep.py  ⏳ Pending
+│   ├── script_08_meeting_scheduled_clickup_prep.py  ✅ ACTIVE
 │   ├── script_09_mhc10_meeting_intelligence_trigger.py ⏳ Pending
 │   ├── script_10_mhc10_meeting_intelligence_summary.py ⏳ Pending
 │   ├── script_11_mhc11_post_meeting_intelligence.py ⏳ Pending
@@ -94,6 +88,18 @@ These two files are the single source of truth for the project architecture and 
 - **LaunchAgent:** `com.meraglim.script01`
 - **Logs:** `~/Automations/logs/script_01.log`
 
+#### Script 6: Create ClickUp Deal for Qualified Prospect
+- **Purpose:** Creates a ClickUp deal when a prospect is marked as "Meeting Invite Sent"
+- **Trigger:** Every 5 minutes via LaunchAgent
+- **Status:** ✅ ACTIVE & TESTED
+- **Input:** Airtable Prospects table
+- **Output:** ClickUp Task
+- **Key Features:**
+  - Deduplication filter (`{ClickUp Task Created} != 1`)
+  - Prevents duplicate task creation
+- **LaunchAgent:** `com.meraglim.script06`
+- **Logs:** `~/Automations/logs/script_06_qualified_prospect_clickup.log`
+
 #### Script 7: Gmail Reply AI Qualification
 - **Purpose:** Monitors for email replies, searches Airtable for prospect, uses AI to qualify
 - **Trigger:** Every 5 minutes via LaunchAgent
@@ -108,6 +114,18 @@ These two files are the single source of truth for the project architecture and 
 - **LaunchAgent:** `com.meraglim.script07`
 - **Logs:** `~/Automations/logs/script_07.log`
 
+#### Script 8: Prepare ClickUp Task When Meeting Scheduled
+- **Purpose:** Creates a prep task in ClickUp when a meeting is scheduled
+- **Trigger:** Every 5 minutes via LaunchAgent
+- **Status:** ✅ ACTIVE & TESTED
+- **Input:** Airtable Prospects table
+- **Output:** ClickUp Task
+- **Key Features:**
+  - Deduplication filter (`{ClickUp Task Created} != 1`)
+  - Prevents duplicate task creation
+- **LaunchAgent:** `com.meraglim.script08`
+- **Logs:** `~/Automations/logs/script_08_meeting_scheduled_clickup.log`
+
 ### ⏳ Pending Scripts (To Be Created)
 
 | Script | Purpose | Trigger | Status |
@@ -116,8 +134,6 @@ These two files are the single source of truth for the project architecture and 
 | Script 3 | Create calendar invite for qualified prospect | Qualified status in Airtable | Pending |
 | Script 4 | Send polite decline to not-qualified prospect | Not qualified status | Pending |
 | Script 5 | Send 7-day follow-up email | 7 days after initial contact | Pending |
-| Script 6 | Create ClickUp deal for qualified prospect | Qualified status | Pending |
-| Script 8 | Prepare ClickUp task when meeting scheduled | Meeting scheduled in calendar | Pending |
 | Script 9 | Trigger meeting intelligence on meeting start | Meeting starts | Pending |
 | Script 10 | Generate meeting intelligence summary | Meeting ends | Pending |
 | Script 11 | Post-meeting intelligence processing | After meeting | Pending |
@@ -163,7 +179,7 @@ sqlite3 ~/Automations/config/state.db "SELECT * FROM script_state;"
 | Airtable | Store & update prospects | AIRTABLE_API_KEY | ✅ Active |
 | Gmail | Monitor email replies | MCP Integration | ✅ Active |
 | OpenAI | AI qualification | OPENAI_API_KEY | ✅ Active |
-| ClickUp | Task/deal management | CLICKUP_API_KEY | ⏳ Pending |
+| ClickUp | Task/deal management | CLICKUP_API_KEY | ✅ Active |
 | Clay | Data enrichment | CLAY_API_KEY | ⏳ Pending |
 
 ## Logging & Monitoring
@@ -354,17 +370,20 @@ When continuing this project:
 | Date | Version | Status | Notes |
 |------|---------|--------|-------|
 | 2026-03-21 | 1.0 | Active | Scripts 1 & 7 deployed, LaunchAgent setup complete |
+| 2026-04-08 | 1.1 | Active | Scripts 6 & 8 deployed, fixed filter formula deduplication |
 | | | | Resolved duplicate task crisis |
 | | | | Created comprehensive documentation |
 
 ## Next Steps
 
 1. ✅ Script 1 (Google Sheets → Airtable) - ACTIVE
-2. ✅ Script 7 (Gmail AI Qualification) - ACTIVE
-3. ⏳ Script 2 (Send Qualification Email) - Next
-4. ⏳ Script 3 (Calendar Invite) - After Script 2
-5. ⏳ Scripts 4-6, 8-11 - Continue in order
-6. 📋 Master deployment summary - When all scripts complete
+2. ✅ Script 6 (Create ClickUp Deal) - ACTIVE
+3. ✅ Script 7 (Gmail AI Qualification) - ACTIVE
+4. ✅ Script 8 (Prepare ClickUp Task) - ACTIVE
+5. ⏳ Script 2 (Send Qualification Email) - Next
+6. ⏳ Script 3 (Calendar Invite) - After Script 2
+7. ⏳ Scripts 4-5, 9-11 - Continue in order
+8. 📋 Master deployment summary - When all scripts complete
 
 ## Questions?
 
@@ -378,7 +397,7 @@ Refer to:
 
 ---
 
-**Last Updated:** 2026-03-21  
+**Last Updated:** 2026-04-08  
 **Maintained By:** Manus AI Agent  
 **Project:** Local Automations – Make.com Migration  
 **Status:** 🟢 Active & Monitored
