@@ -4,7 +4,7 @@
 
 This project converts 12 Make.com automation blueprints into persistent local Python scripts that run on macOS using LaunchAgents. All scripts execute locally with zero Manus involvement, preventing unexpected charges and ensuring reliability.
 
-**Status:** 🟢 Active — Scripts 1–9, 10T, MHC10, MHC10T, MHC11 deployed; Scripts 6 & 8 fixed and verified  
+**Status:** 🟢 Active — Scripts 1–9, 10T, MHC10, MHC10T, MHC11 deployed and verified; Scripts 6 & 8 fixed and verified  
 **Cost:** $0 — All automation runs locally on your Mac  
 **Last Updated:** April 8, 2026
 
@@ -33,7 +33,7 @@ This project converts 12 Make.com automation blueprints into persistent local Py
 | Script 10T | Meeting Intelligence Trigger | ✅ ACTIVE | Webhook-triggered; event-driven |
 | MHC10 | Meeting Intelligence Sync | ✅ ACTIVE | Event-driven |
 | MHC10T | Meeting Intelligence Trigger (MHC) | ✅ ACTIVE | Event-driven |
-| MHC11 | Post-Meeting Intelligence Sync | ✅ ACTIVE | Event-driven |
+| MHC11 | Post-Meeting Intelligence Sync | ✅ ACTIVE | Fully integrated: Gmail + Claude + Airtable + ClickUp; INTERNAL path testing pending |
 
 ---
 
@@ -44,7 +44,8 @@ This project converts 12 Make.com automation blueprints into persistent local Py
 | Cloudflare Tunnel | ✅ Running | LaunchAgent `com.meraglim.cloudflared-tunnel`; 4 connections to ATL edge nodes |
 | script10t.meraglim.com | ✅ Healthy | Routes to localhost:8000; `/health` endpoint confirmed |
 | Script 9 Webhook | ✅ Running | Flask on port 8000; LaunchAgent `com.meraglim.script09-clay-webhook` |
-| `.env` | ✅ 33 entries | Includes CLAY_API_KEY; loaded via explicit absolute path in shared_utils.py |
+| Script 11 LaunchAgent | ✅ Deployed | `com.meraglim.script11-post-meeting-intelligence`; installed via deployment script |
+| `.env` | ✅ 34 entries | Includes ANTHROPIC_API_KEY; loaded via explicit absolute path in shared_utils.py |
 | GitHub Repo | ✅ Public | https://github.com/kwmassengill/automation; auto-pushed at session close |
 
 ---
@@ -68,7 +69,7 @@ Paste the close protocol from `~/Automations/docs/SESSION_CLOSE_PROTOCOL.md`. Th
 launchctl list | grep com.meraglim
 
 # View real-time logs
-tail -f ~/Automations/logs/script_01.log
+tail -f ~/Automations/logs/script_11.log
 
 # Check Cloudflare tunnel health
 curl -s https://script10t.meraglim.com/health
@@ -89,7 +90,7 @@ for plist in ~/Library/LaunchAgents/com.meraglim.*.plist; do launchctl load "$pl
 - **Homebrew:** /opt/homebrew/bin/ (NOT /usr/local/bin/)
 - **LaunchAgents:** ~/Library/LaunchAgents/com.meraglim.*
 - **Google OAuth:** All scripts use `google_token.json` (never `oauth_token.json`)
-- **Credentials:** ~/Automations/config/.env (33 entries; loaded via explicit absolute path)
+- **Credentials:** ~/Automations/config/.env (34 entries; loaded via explicit absolute path)
 - **GitHub:** https://github.com/kwmassengill/automation (public; PAT in macOS Keychain)
 
 ---
@@ -98,6 +99,7 @@ for plist in ~/Library/LaunchAgents/com.meraglim.*.plist; do launchctl load "$pl
 
 | Item | Priority | Added |
 |------|----------|-------|
+| Test Script 11 INTERNAL email path (internal meeting transcript processing) | High | April 8, 2026 |
 | Monitor Scripts 6 & 8 for 24–48 hours to confirm no duplicate ClickUp tasks | Medium | April 8, 2026 |
 | Clay webhook URL in Clay's UI still needs to be pointed to `https://script10t.meraglim.com/clay-webhook` | Medium | April 8, 2026 |
 

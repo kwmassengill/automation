@@ -43,6 +43,7 @@
 | Script 6 | `com.meraglim.script06` | LaunchAgent |
 | Script 7 | `com.meraglim.script07` | Every 5 min |
 | Script 8 | `com.meraglim.script08` | LaunchAgent |
+| Script 11 | `com.meraglim.script11-post-meeting-intelligence` | Every 5 min | **NEW — April 8, 2026** |
 
 ---
 
@@ -62,10 +63,10 @@
 ## Credentials & Configuration
 
 - **`.env` location:** `~/Automations/config/.env`
-- **`.env` entry count:** 33 keys
+- **`.env` entry count:** 34 keys (added ANTHROPIC_API_KEY on April 8, 2026)
 - **Loading method:** Explicit absolute path in `shared_utils.py` — `load_dotenv("/Users/kevinmassengill/Automations/config/.env")`
 - **Google OAuth token:** `~/Automations/config/google_token.json` (all scripts use this; never `oauth_token.json`)
-- **Key APIs:** Airtable, Gmail (OAuth), Google Calendar, ClickUp, Claude (`claude-sonnet-4-20250514`), Clay (`CLAY_API_KEY=9d1f10e2b7bf089a41ad`)
+- **Key APIs:** Airtable, Gmail (OAuth), Google Calendar, ClickUp, Claude (`claude-sonnet-4-20250514`), Clay (`CLAY_API_KEY=9d1f10e2b7bf089a41ad`), Anthropic
 
 ---
 
@@ -109,11 +110,14 @@ tail -3 ~/Automations/logs/cloudflared_tunnel_error.log
 # Script 9 / Script 10T webhook health
 curl -s https://script10t.meraglim.com/health
 
-# .env key count
+# .env key count (should be 34)
 grep -c "=" ~/Automations/config/.env
 
 # Recent log activity
 ls -lt ~/Automations/logs/ | head -15
+
+# Script 11 recent logs
+tail -20 ~/Automations/logs/script_11.log
 ```
 
 ---

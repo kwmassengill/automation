@@ -24,7 +24,7 @@ This registry is the **single source of truth** for all automation scripts. Read
 | 10 | Pre-Meeting Intelligence | `script_10_pre_meeting_intelligence.py` | ✅ ACTIVE | Event-driven | Triggered by Script 10T |
 | MHC10 | Meeting Intelligence Sync | `script_mhc10_meeting_intelligence_sync.py` | ✅ ACTIVE | Event-driven | MHC variant |
 | MHC10T | Meeting Intelligence Trigger (MHC) | `script_mhc10t_meeting_intelligence_trigger.py` | ✅ ACTIVE | Event-driven | MHC variant |
-| MHC11 | Post-Meeting Intelligence Sync | `script_mhc11_post_meeting_intelligence_sync.py` | ✅ ACTIVE | Event-driven | MHC variant |
+| MHC11 | Post-Meeting Intelligence Sync | `script_mhc11_post_meeting_intelligence_sync.py` | ✅ ACTIVE | LaunchAgent — every 5 min | Watches Gmail for TRANSCRIPT/INTERNAL emails; Claude analysis; Airtable updates; ClickUp task creation; INTERNAL path testing pending |
 
 ---
 
@@ -46,7 +46,7 @@ This registry is the **single source of truth** for all automation scripts. Read
 |------|----------|---------|
 | `shared_utils.py` | `~/Automations/scripts/` | Shared utilities; loads .env from explicit absolute path |
 | `session_close.sh` | `~/Automations/scripts/` | Session close: downloads updated docs from CDN + pushes to GitHub |
-| `.env` | `~/Automations/config/` | All API keys (33 entries); NEVER commit |
+| `.env` | `~/Automations/config/` | All API keys (34 entries); NEVER commit |
 | `google_token.json` | `~/Automations/config/` | Google OAuth token; used by all Gmail/Calendar scripts |
 | `setup_google_auth.py` | `~/Automations/scripts/` | Re-run to refresh Google OAuth token if expired |
 | `setup_cron_jobs.sh` | `~/Automations/scripts/` | Legacy setup reference |

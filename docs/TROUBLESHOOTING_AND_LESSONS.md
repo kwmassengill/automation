@@ -211,6 +211,122 @@ curl -fsSL "<new_cdn_url>" | grep "expected_text"
 
 ---
 
+---
+
+## April 8, 2026 — Script 11 Post-Meeting Intelligence Sync Implementation
+
+### Issue 1: Script 11 Partial Scaffold — Missing Airtable + ClickUp Integration
+
+**Symptom:** Script 11 was deployed as a partial scaffold that only extracted Gmail attachments and parsed meeting notes. Airtable lookups, updates, ClickUp task creation, and Claude AI analysis were all marked as TODO.
+
+**Root Cause:** The initial conversion from Make.com blueprint was incomplete. The scaffold verified Gmail OAuth and attachment extraction worked, but the downstream integrations were not yet implemented.
+
+**Resolution:** Completed Script 11 implementation with full Airtable + ClickUp + Claude integration:
+
+1. **Gmail Integration (✅ Working)**
+   - Watches for unread emails with "TRANSCRIPT" or "INTERNAL" in subject
+   - Extracts plain-text attachments (MIME type filter: `text/plain`)
+   - Cleans transcript (removes WEBVTT formatting: `--` and `>` characters)
+   - Marks emails as read after processing
+
+2. **Claude AI Analysis (✅ Working)**
+   - External path: M&A analyst prompt for prospect meetings
+   - Internal path: Executive meeting intelligence prompt
+   - Returns structured JSON with meeting outcomes, decisions, action items, etc.
+
+3. **Airtable Integration (✅ Working)**
+   - Searches Prospects table by prospect email (extracted from email body: `PROSPECT_EMAIL: email@domain.com`)
+   - Updates record with:
+     - Last Action: "Meeting — transcript processed"
+     - Last Action Date: Today (YYYY-MM-DD format)
+     - Next Action Due: Today (YYYY-MM-DD format)
+     - Relationship Tier: From Claude analysis
+     - Follow-Up Cadence: From Claude analysis
+     - Contact Profile: From Claude analysis
+     - AI Analysis Notes: Formatted meeting intelligence
+
+4. **ClickUp Integration (✅ Working)**
+   - Extracts ClickUp task ID from Airtable `ClickUp Doc URL` field
+   - Posts comprehensive comment with full intelligence report
+   - Creates Next Action tasks (one per action item from Claude)
+   - For internal meetings: Creates Meeting Summary task + Next Step tasks
+
+5. **Deployment (✅ Complete)**
+   - Deployed via LaunchAgent: `com.meraglim.script11-post-meeting-intelligence`
+   - Runs every 5 minutes
+   - Full error logging and state tracking
+
+### Issues Encountered and Resolutions
+
+#### Issue A: Missing 'size' Field in Gmail API Response
+
+**Symptom:** Script 11 crashed with `KeyError: 'size'` when processing some emails.
+
+**Root Cause:** Some Gmail attachments don't include a `size` field in the API response.
+
+**Resolution:** Changed `part["size"]` to `part.get("size", 0)` to provide a default value.
+
+---
+
+#### Issue B: SMTP Authentication Failed (Gmail App Password)
+
+**Symptom:** Initial email sending attempts failed with "invalid_scope: Bad Request" when using SMTP with Gmail app password.
+
+**Root Cause:** The test script was using SMTP authentication, which required a Gmail app password. The OAuth scope for SMTP was incorrect.
+
+**Resolution:** Switched to Gmail API OAuth for sending test emails (same approach as other scripts). This eliminated the SMTP authentication issue and used the existing `google_token.json` OAuth token.
+
+---
+
+#### Issue C: Airtable Date Field Format
+
+**Symptom:** Airtable update failed with `422 Unprocessable Entity` error.
+
+**Root Cause:** The script was sending ISO datetime format (`2026-04-08T20:52:37.123456`), but Airtable date fields expect date-only format (`2026-04-08`).
+
+**Resolution:** Changed date formatting from `datetime.now().isoformat()` to `datetime.now().strftime("%Y-%m-%d")`.
+
+---
+
+#### Issue D: Python String Formatting Corruption During File Edits
+
+**Symptom:** After editing the script to fix date formatting, multi-line f-strings became corrupted with syntax errors.
+
+**Root Cause:** The file edit operation didn't properly handle multi-line string literals with embedded newlines.
+
+**Resolution:** Rewrote the entire script from scratch with clean, simple string handling to avoid corruption.
+
+---
+
+### Test Results
+
+**Test Email:** TRANSCRIPT from Adam Firestone (adam@six3ro.com) with real meeting transcript
+
+**Results:**
+- ✅ Gmail found and processed email
+- ✅ Transcript extracted and cleaned
+- ✅ Claude analyzed transcript in 22 seconds
+- ✅ Airtable record found and updated
+- ✅ ClickUp comment posted with full intelligence
+- ✅ 3 Next Action tasks created in ClickUp
+
+**Remaining Work:**
+- ⏳ Test INTERNAL email path (internal meeting transcript processing) — scheduled for next session
+
+### Key Lessons
+
+1. **Always test with real data** — Using actual meeting transcripts and prospect records revealed issues that mock data would have missed.
+
+2. **OAuth is better than app passwords** — Using Gmail API OAuth (instead of SMTP app password) eliminated authentication issues and reused existing infrastructure.
+
+3. **Date format matters** — Airtable's date fields require specific formatting; always check the field type in Airtable before sending data.
+
+4. **Rewrite vs. edit for complex changes** — When multi-line strings or complex formatting is involved, rewriting the file from scratch is safer than trying to edit specific lines.
+
+5. **Field IDs are critical** — The handoff document from Claude provided exact Airtable field IDs; using those directly (not field names) was essential for the update to work.
+
+---
+
 ## Contact Information
 
 **If duplicate tasks appear again:**

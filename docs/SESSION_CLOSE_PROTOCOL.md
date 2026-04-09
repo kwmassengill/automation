@@ -84,7 +84,7 @@ tail -3 ~/Automations/logs/cloudflared_tunnel_error.log
 # Script 9 / 10T webhook health
 curl -s https://script10t.meraglim.com/health
 
-# .env key count (should be 33)
+# .env key count (should be 34)
 grep -c "=" ~/Automations/config/.env
 
 # Recent log activity
