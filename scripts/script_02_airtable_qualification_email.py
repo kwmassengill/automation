@@ -44,7 +44,7 @@ from googleapiclient.discovery import build
 # SAFEGUARD SETTINGS
 # ============================================================================
 DRY_RUN = False  # Set to True for testing without sending emails
-MAX_EMAILS_PER_RUN = 1  # Maximum emails to send per execution
+MAX_EMAILS_PER_RUN = 5  # Maximum emails to send per execution
 # ============================================================================
 
 # Configuration
