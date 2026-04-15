@@ -193,3 +193,4 @@ When Claude Code encounters an ambiguous architectural decision: check this file
 - Script 5: Removed legacy misnamed plist com.meraglim.script05_no_response_7day_followup. Created clean com.meraglim.script05 plist.
 - Script 7: Confirmed operational — JSON parsing issue from Make.com version was resolved in Python migration.
 - Rules added: Plist verification required after every deployment. Airtable field names must be verified by one-record fetch before any new filter or update is written.
+- Script 5: Raised MAX_EMAILS_PER_RUN from 1 to 5. Confirmed Days Since Email field is populated correctly — backlog of 7 overdue follow-ups cleared same session.
