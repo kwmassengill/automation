@@ -1,51 +1,27 @@
-# Session Close Protocol
-## Meraglim Local Automations — Make.com Migration Project
+## Claude Code Session Close
 
-This document defines the standardized procedure for closing every work session. It ensures all changes are captured and pushed to GitHub so the next session starts with a complete and accurate picture of the system.
+At the end of every Claude Code session, complete these steps in order:
 
-**Last Updated:** April 8, 2026 — Updated to reflect GitHub-based sync workflow (tested and confirmed working).
+**1. Update any docs that changed this session:**
+- README_MASTER.md - update script status table if any status changed
+- SCRIPTS_REGISTRY.md - update any script touched this session
+- TROUBLESHOOTING_AND_LESSONS.md - append a dated entry for any issue encountered and resolved
+- AGENTS.md - append fix notes under the relevant script entry
 
----
+**2. Run the following from terminal:**
 
-## The Session Close Prompt
+cd ~/Automations
+git add docs/ scripts/
+git commit -m "session close - [brief description]"
+git push
 
-Copy and paste this prompt at the end of every session:
-
----
-
-> Session is closing. Please do the following in order:
->
-> **1. Update all 5 documentation files** to reflect everything completed this session:
-> - `README_MASTER.md` — update script status table and current state summary
-> - `SCRIPTS_REGISTRY.md` — update status, notes, and known issues for any scripts touched
-> - `INFRASTRUCTURE_SUMMARY.md` — update if any services, ports, tunnels, or LaunchAgents changed
-> - `TROUBLESHOOTING_AND_LESSONS.md` — append a new dated entry summarizing issues encountered and resolutions
-> - `SESSION_CLOSE_PROTOCOL.md` — update only if the close workflow itself changed
->
-> **Important:** Before writing updates, pull the current versions of all 5 files from GitHub using:
-> ```bash
-> for file in README_MASTER.md SCRIPTS_REGISTRY.md INFRASTRUCTURE_SUMMARY.md TROUBLESHOOTING_AND_LESSONS.md SESSION_CLOSE_PROTOCOL.md; do
->   curl -fsSL "https://raw.githubusercontent.com/kwmassengill/automation/main/docs/$file" -o "/tmp/$file"
-> done
-> ```
-> Read all 5 files before writing any updates to ensure accuracy.
->
-> **2. Upload all 5 updated files to CDN** using `manus-upload-file`.
->
-> **3. Provide the `session_close.sh` command** in this exact format, substituting the real CDN URLs:
-> ```bash
-> bash ~/Automations/scripts/session_close.sh \
->   --readme    "[README_MASTER.md CDN URL]" \
->   --registry  "[SCRIPTS_REGISTRY.md CDN URL]" \
->   --infra     "[INFRASTRUCTURE_SUMMARY.md CDN URL]" \
->   --trouble   "[TROUBLESHOOTING_AND_LESSONS.md CDN URL]" \
->   --protocol  "[SESSION_CLOSE_PROTOCOL.md CDN URL]" \
->   --qr-date   "$(date '+%Y-%m-%d')"
-> ```
->
-> Running this command on my Mac will download all updated docs to `~/Automations/docs/` and push everything to GitHub automatically.
+**3. Confirm the push succeeded.** Session is not closed until GitHub reflects the latest state.
 
 ---
+
+## Legacy Close Protocol (Manus - Archived)
+
+The prior workflow using CDN upload and session_close.sh is no longer the primary method. It remains available as a fallback if Claude Code is unavailable. The session_close.sh script remains in ~/Automations/scripts/.
 
 ## What Each File Captures
 

@@ -12,7 +12,7 @@ This project converts 12 Make.com automation blueprints into persistent local Py
 
 ## ⚠️ New Agent Onboarding
 
-**If you are a Manus agent starting a new task, do not rely on this README for script status.** Pull the latest docs from GitHub first (the opening prompt handles this automatically), then read `SCRIPTS_REGISTRY.md` as the single source of truth for all script statuses.
+**If you are Claude Code starting a new session, read all six canonical docs before taking any action.** Start with `AGENTS.md`, then this file, then `SCRIPTS_REGISTRY.md`, `INFRASTRUCTURE_SUMMARY.md`, `TROUBLESHOOTING_AND_LESSONS.md`, and `SESSION_CLOSE_PROTOCOL.md`. All six live in `~/Automations/docs/`. Do not create a plan or modify any file until all six are read.
 
 ---
 
