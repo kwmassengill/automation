@@ -10,7 +10,7 @@ This registry is the **single source of truth** for all automation scripts. Read
 
 | ID | Purpose | Canonical Filename | Status | Trigger | Notes |
 |:---|:--------|:------------------|:-------|:--------|:------|
-| 00 | Daily Log Analysis & Health Report | `script_00_daily_log_analysis_native.py` | ✅ ACTIVE | LaunchAgent — 6 AM daily | Handles Script 7 comma-millisecond timestamp format (`2026-04-08 09:36:45,316`) |
+| 00 | Daily Log Analysis & Health Report | `script_00_daily_log_analysis_native.py` | ✅ ACTIVE | LaunchAgent — 6 AM daily | Three-layer report: (1) script health, (2) Airtable pipeline intel — status breakdown, overdue follow-ups, 24h email activity, (3) Open Items from AGENTS.md. Supports `--dry-run`. Handles Script 7 comma-ms timestamp format. |
 | 01 | Google Sheets → Airtable Sync | `script_01_google_sheets_to_airtable.py` | ✅ ACTIVE | LaunchAgent — every 5 min | Duplicate prevention by email; processes 10 rows/run |
 | 02 | Airtable New Prospect → Qualification Email | `script_02_airtable_qualification_email.py` | ✅ ACTIVE | LaunchAgent — every 15 min | Gmail OAuth via google_token.json |
 | 03 | Qualified Prospect → Calendar Invite | `script_03_qualified_prospect_calendar_invite.py` | ✅ ACTIVE | LaunchAgent | Google Calendar API |

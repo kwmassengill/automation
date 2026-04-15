@@ -16,7 +16,8 @@ import glob
 import re
 import base64
 import time
-from datetime import datetime
+import requests
+from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.image import MIMEImage
@@ -30,6 +31,12 @@ except ImportError:
     print("Run: pip3 install google-auth-oauthlib google-auth-httplib2 google-api-python-client")
     sys.exit(1)
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv("/Users/kevinmassengill/Automations/config/.env")
+except Exception:
+    pass
+
 # Configuration - Native Mac paths
 AUTOMATIONS_DIR = os.path.expanduser("~/Automations")
 LOGS_DIR = os.path.join(AUTOMATIONS_DIR, "logs")
@@ -37,6 +44,9 @@ GOOGLE_TOKEN_FILE = os.path.join(AUTOMATIONS_DIR, "config", "google_token.json")
 LOGO_FILE = os.path.join(AUTOMATIONS_DIR, "config", "meraglim_logo.jpg")
 LOCK_FILE = os.path.join(AUTOMATIONS_DIR, "logs", ".daily_analysis_lock")
 RECIPIENT_EMAIL = "KMassengill@Meraglim.com"
+AGENTS_MD_PATH = os.path.join(AUTOMATIONS_DIR, "docs", "AGENTS.md")
+AIRTABLE_BASE_ID = "appoNkgoKHAUXgXV9"
+AIRTABLE_TABLE_ID = "tblxEhVek8ldTQMW1"
 
 SCRIPT_NAMES = {
     "script_01": ("Script 1", "Google Sheets → Airtable"),
@@ -272,11 +282,111 @@ class LogAnalyzer:
     {rows_html}
   </table>
 
+  {self.render_pipeline_html()}
+
+  {self.render_open_items_html()}
+
   <div style="text-align:center;color:#aaa;font-size:11px;margin-top:30px;padding-top:16px;border-top:1px solid #eee;">
     Meraglim Automation System &nbsp;·&nbsp; Next report: Tomorrow at 6:00 AM CST
   </div>
 </body>
 </html>"""
+
+    # -----------------------------------------------------------------
+    # Layer 2 + Layer 3 HTML blocks (appended after Layer 1 table)
+    # Populated by main() before generate_html_report() is called.
+    # -----------------------------------------------------------------
+    pipeline_intel = None  # type: PipelineIntel
+    open_items = None      # type: OpenItems
+
+    def render_pipeline_html(self):
+        pi = self.pipeline_intel
+        if pi is None:
+            return ""
+        if pi.error:
+            return f"""
+  <h2 style="font-size:16px;margin:28px 0 8px;">📈 Pipeline Intelligence</h2>
+  <div style="background:#fff3cd;border-left:4px solid #e6a817;padding:12px 16px;border-radius:0 4px 4px 0;">
+    <strong>⚠️ Airtable query failed:</strong> {pi.error}
+  </div>"""
+
+        status_rows = "".join(
+            f"""<tr>
+              <td style="padding:8px 12px;border-bottom:1px solid #eee;">{status}</td>
+              <td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right;font-weight:bold;">{count}</td>
+            </tr>"""
+            for status, count in sorted(pi.status_counts.items(), key=lambda x: (-x[1], x[0]))
+        ) or """<tr><td colspan="2" style="padding:8px 12px;color:#888;">No prospects found</td></tr>"""
+
+        overdue_html = ""
+        if pi.overdue_followups:
+            items = "".join(
+                f"<li style='font-size:12px;color:#555;'>{o['name']} — {o['days']} days ({o['status']})</li>"
+                for o in pi.overdue_followups[:10]
+            )
+            more = f"<li style='font-size:11px;color:#888;'>…and {len(pi.overdue_followups)-10} more</li>" if len(pi.overdue_followups) > 10 else ""
+            overdue_html = f"""
+    <div style="margin-top:12px;">
+      <strong>Overdue follow-ups (Days Since Email ≥ 7):</strong> {len(pi.overdue_followups)}
+      <ul style="margin:6px 0 0 16px;padding:0;">{items}{more}</ul>
+    </div>"""
+        else:
+            overdue_html = """
+    <div style="margin-top:12px;">
+      <strong>Overdue follow-ups (Days Since Email ≥ 7):</strong> <span style="color:#28a745;">0</span>
+    </div>"""
+
+        return f"""
+  <h2 style="font-size:16px;margin:28px 0 8px;">📈 Pipeline Intelligence</h2>
+  <div style="background:#f8f8f8;border-left:4px solid #D4AF37;padding:14px 18px;border-radius:0 4px 4px 0;">
+    <p style="margin:0 0 10px;"><strong>Total prospects:</strong> {pi.total} &nbsp;·&nbsp; <strong>Email activity in last 24h:</strong> {pi.emails_last_24h}</p>
+    <table style="width:100%;border-collapse:collapse;border:1px solid #ddd;margin-top:8px;">
+      <thead><tr style="background:#efefef;">
+        <th style="padding:8px 12px;text-align:left;font-size:12px;">Qualification Status</th>
+        <th style="padding:8px 12px;text-align:right;font-size:12px;">Count</th>
+      </tr></thead>
+      <tbody>{status_rows}</tbody>
+    </table>
+    {overdue_html}
+  </div>"""
+
+    def render_open_items_html(self):
+        oi = self.open_items
+        if oi is None:
+            return ""
+        if oi.error:
+            return f"""
+  <h2 style="font-size:16px;margin:28px 0 8px;">📌 Open Items</h2>
+  <div style="background:#fff3cd;border-left:4px solid #e6a817;padding:12px 16px;border-radius:0 4px 4px 0;">
+    <strong>⚠️ Could not read AGENTS.md:</strong> {oi.error}
+  </div>"""
+        if not oi.items:
+            return """
+  <h2 style="font-size:16px;margin:28px 0 8px;">📌 Open Items</h2>
+  <div style="background:#f8f8f8;border-left:4px solid #28a745;padding:12px 16px;border-radius:0 4px 4px 0;color:#555;">
+    No open items. ✅
+  </div>"""
+
+        priority_color = {"High": "#dc3545", "Medium": "#e6a817", "Low": "#6c757d"}
+        rows = "".join(
+            f"""<tr>
+              <td style="padding:8px 12px;border-bottom:1px solid #eee;">{item['item']}</td>
+              <td style="padding:8px 12px;border-bottom:1px solid #eee;color:{priority_color.get(item['priority'], '#333')};font-weight:bold;white-space:nowrap;">{item['priority']}</td>
+              <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#888;white-space:nowrap;">{item['added']}</td>
+            </tr>"""
+            for item in oi.items
+        )
+        return f"""
+  <h2 style="font-size:16px;margin:28px 0 8px;">📌 Open Items</h2>
+  <p style="font-size:11px;color:#888;margin:0 0 8px;">Source: <code>docs/AGENTS.md → Open Items</code>. Edit that table to add or remove.</p>
+  <table style="width:100%;border-collapse:collapse;border:1px solid #ddd;border-radius:4px;">
+    <thead><tr style="background:#efefef;">
+      <th style="padding:8px 12px;text-align:left;font-size:12px;">Item</th>
+      <th style="padding:8px 12px;text-align:left;font-size:12px;">Priority</th>
+      <th style="padding:8px 12px;text-align:left;font-size:12px;">Added</th>
+    </tr></thead>
+    <tbody>{rows}</tbody>
+  </table>"""
 
     def send_via_gmail_api(self):
         if not os.path.exists(GOOGLE_TOKEN_FILE):
@@ -314,14 +424,126 @@ class LogAnalyzer:
             return False
 
 
+class PipelineIntel:
+    """Layer 2: read-only Airtable rollup for prospect pipeline visibility."""
+
+    def __init__(self):
+        self.total = 0
+        self.status_counts = {}
+        self.overdue_followups = []
+        self.emails_last_24h = 0
+        self.error = None
+
+    def fetch(self):
+        key = os.getenv("AIRTABLE_API_KEY")
+        if not key:
+            self.error = "AIRTABLE_API_KEY not set in environment"
+            return
+
+        url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_TABLE_ID}"
+        headers = {"Authorization": f"Bearer {key}"}
+        records = []
+        offset = None
+        try:
+            while True:
+                params = {"pageSize": 100}
+                if offset:
+                    params["offset"] = offset
+                r = requests.get(url, headers=headers, params=params, timeout=30)
+                r.raise_for_status()
+                data = r.json()
+                records.extend(data.get("records", []))
+                offset = data.get("offset")
+                if not offset:
+                    break
+        except Exception as e:
+            self.error = f"{type(e).__name__}: {e}"
+            return
+
+        self.total = len(records)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+        # Overdue = awaiting first 7-day follow-up. Once a follow-up has been
+        # sent (status moves to "No Response - Followed Up" or similar), the
+        # prospect is no longer actionable by Script 5, so it's dropped here.
+        awaiting_followup_statuses = {"Qualification Email Sent"}
+
+        for rec in records:
+            f = rec.get("fields", {})
+            status = f.get("Qualification Status") or "(unset)"
+            self.status_counts[status] = self.status_counts.get(status, 0) + 1
+
+            days = f.get("Days Since Email")
+            if isinstance(days, (int, float)) and days >= 7 and status in awaiting_followup_statuses:
+                self.overdue_followups.append({
+                    "name": f.get("Name") or f.get("Email") or "(unknown)",
+                    "days": int(days),
+                    "status": status,
+                })
+
+            date_sent = f.get("Date Sent")
+            if date_sent:
+                try:
+                    dt = datetime.fromisoformat(str(date_sent).replace("Z", "+00:00"))
+                    if dt >= cutoff:
+                        self.emails_last_24h += 1
+                except Exception:
+                    pass
+
+        self.overdue_followups.sort(key=lambda o: -o["days"])
+
+
+class OpenItems:
+    """Layer 3: static open items parsed from docs/AGENTS.md → ## Open Items table."""
+
+    def __init__(self):
+        self.items = []
+        self.error = None
+
+    def read(self):
+        try:
+            with open(AGENTS_MD_PATH, "r") as f:
+                content = f.read()
+        except Exception as e:
+            self.error = f"{type(e).__name__}: {e}"
+            return
+
+        m = re.search(r'##\s+Open Items\s*\n(.*?)(?=\n##\s|\n---|\Z)', content, re.DOTALL)
+        if not m:
+            return
+
+        for line in m.group(1).split("\n"):
+            line = line.strip()
+            if not line.startswith("|") or not line.endswith("|"):
+                continue
+            cells = [c.strip() for c in line.strip("|").split("|")]
+            if len(cells) != 3:
+                continue
+            if cells[0].lower() == "item":
+                continue
+            if set("".join(cells)) <= set("- "):
+                continue
+            self.items.append({"item": cells[0], "priority": cells[1], "added": cells[2]})
+
+
 def main():
+    dry_run = "--dry-run" in sys.argv
     if not acquire_lock():
         sys.exit(0)
     try:
         analyzer = LogAnalyzer()
         analyzer.analyze_all_logs()
 
-        # Console output
+        # Layer 2 — Pipeline intel (Airtable rollup)
+        pipeline = PipelineIntel()
+        pipeline.fetch()
+        analyzer.pipeline_intel = pipeline
+
+        # Layer 3 — Open items from AGENTS.md
+        open_items = OpenItems()
+        open_items.read()
+        analyzer.open_items = open_items
+
+        # Console output — Layer 1
         print("\n" + "=" * 60)
         print("MERAGLIM AUTOMATION SCRIPTS - DAILY HEALTH REPORT")
         print("=" * 60)
@@ -341,9 +563,47 @@ def main():
             print(f"\n⚠️  Issues Requiring Attention:")
             for e in analyzer.all_errors:
                 print(f"  - {e}")
+
+        # Console output — Layer 2
+        print("\n" + "-" * 60)
+        print("PIPELINE INTELLIGENCE")
+        print("-" * 60)
+        if pipeline.error:
+            print(f"  ⚠️ Airtable query failed: {pipeline.error}")
+        else:
+            print(f"  Total prospects: {pipeline.total}")
+            print(f"  Email activity in last 24h: {pipeline.emails_last_24h}")
+            print(f"  Overdue follow-ups (Days Since Email >= 7): {len(pipeline.overdue_followups)}")
+            print(f"\n  Qualification Status breakdown:")
+            for status, count in sorted(pipeline.status_counts.items(), key=lambda x: (-x[1], x[0])):
+                print(f"    {count:>4}  {status}")
+            if pipeline.overdue_followups:
+                print(f"\n  Overdue prospects (top 10):")
+                for o in pipeline.overdue_followups[:10]:
+                    print(f"    {o['days']:>3}d  {o['name']}  ({o['status']})")
+
+        # Console output — Layer 3
+        print("\n" + "-" * 60)
+        print("OPEN ITEMS (from AGENTS.md)")
+        print("-" * 60)
+        if open_items.error:
+            print(f"  ⚠️ Could not read AGENTS.md: {open_items.error}")
+        elif not open_items.items:
+            print("  No open items.")
+        else:
+            for item in open_items.items:
+                print(f"  [{item['priority']}] {item['item']}  (added {item['added']})")
+
         print("\n" + "=" * 60)
 
-        analyzer.send_via_gmail_api()
+        if dry_run:
+            print("🧪 --dry-run set. Email NOT sent.")
+            out_path = os.path.join(LOGS_DIR, "script_00_dryrun.html")
+            with open(out_path, "w") as f:
+                f.write(analyzer.generate_html_report())
+            print(f"📄 HTML preview written to: {out_path}")
+        else:
+            analyzer.send_via_gmail_api()
     finally:
         release_lock()
 

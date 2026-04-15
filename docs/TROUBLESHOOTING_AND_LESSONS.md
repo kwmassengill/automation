@@ -392,3 +392,15 @@ curl -fsSL "<new_cdn_url>" | grep "expected_text"
 
 **Rule going forward:** Review throttle settings on all email scripts before considering them production-ready. Development safeguards should be revisited after first successful live run.
 
+---
+
+### Issue 5: Script 0 — Substring Match in Status Filter Produced Misleading "Overdue" Count
+
+**Symptom:** Initial implementation of Script 0 Layer 2 reported 29 overdue follow-ups. All 29 had status `No Response - Followed Up` — meaning Script 5 had already sent their follow-up days ago. They were not actionable, so surfacing them as "overdue" was noise.
+
+**Root Cause:** The active-status whitelist used substring matching (`"No Response" in "No Response - Followed Up"` → True), which collapsed two distinct pipeline stages into one.
+
+**Resolution:** Replaced substring check with exact-match set containing only `{"Qualification Email Sent"}`. A prospect is "overdue for a 7-day follow-up" only if Script 5 has not yet acted on it. Once status advances to `No Response - Followed Up`, the prospect is out of Script 5's pipeline.
+
+**Rule going forward:** Never use substring matching on Airtable status values. Pipeline statuses are distinct tokens and must be compared by equality against an explicit whitelist. Before wiring any new filter to an Airtable status field, enumerate the actual distinct values present in the table.
+
