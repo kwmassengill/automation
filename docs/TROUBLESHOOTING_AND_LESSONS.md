@@ -336,3 +336,59 @@ curl -fsSL "<new_cdn_url>" | grep "expected_text"
 3. Verify LaunchAgent is still loaded: `launchctl list | grep com.meraglim`
 4. Check logs: `tail -f ~/Automations/logs/scriptXX.log`
 5. Contact Manus support if issue persists: https://manus.im/feedback
+
+---
+
+## April 15, 2026 — Missing LaunchAgent Plists, Filter Formula Bugs, and Nonexistent Airtable Field
+
+### Issue 1: Scripts 2, 3, 4, 5, 7, 8 — Missing LaunchAgent Plist Files
+
+**Symptom:** Scripts 2, 3, 4, 5, 7, and 8 had never run since the Mac migration. No log files existed for any of them. Script 5 showed exit code 2 under a misnamed plist.
+
+**Root Cause:** LaunchAgent plist files were never created for these scripts during the original Manus migration. Only Scripts 1, 5 (misnamed), 6, and 9 had plists. The README marked all scripts as ACTIVE, masking the gap.
+
+**Resolution:** Created plist files for Scripts 2, 3, 4, 5, 7, and 8. Removed the legacy misnamed Script 5 plist (com.meraglim.script05_no_response_7day_followup). All six scripts loaded and verified operational.
+
+**Rule going forward:** After any script deployment, immediately verify the plist exists with `launchctl list | grep com.meraglim` and confirm a log file is created within one poll cycle. README ACTIVE status is not sufficient confirmation.
+
+---
+
+### Issue 2: Scripts 2 and 3 — TRUE()/FALSE() Filter Formula Bug
+
+**Symptom:** Script 2 returned zero Airtable records despite three matching prospects. Script 3 returned 422 Unprocessable Entity from Airtable API.
+
+**Root Cause:** Both scripts used Make.com boolean syntax (TRUE()/FALSE()) in Airtable filter formulas. Airtable's REST API requires 1/0 for boolean fields. This is the same bug previously fixed in Scripts 6 and 8 on April 8.
+
+**Resolution:** 
+- Script 2: Changed `{In Automation} = TRUE()` to `{In Automation} = 1`
+- Script 3: Changed `{Calendar Invite Sent} = FALSE()` to `{Calendar Invite Sent} = 0`
+
+**Rule going forward:** All Airtable filter formulas must use 1/0 for boolean fields. Never use TRUE()/FALSE(). Audit any new script before deployment.
+
+---
+
+### Issue 3: Script 3 — Nonexistent Airtable Field
+
+**Symptom:** Script 3 continued returning 422 after the FALSE() fix. Update function also referenced the same nonexistent field.
+
+**Root Cause:** Script 3 was built against a field called `{Calendar Invite Sent}` that does not exist in the Airtable Prospects table. The table has no boolean tracking fields — only `{Qualification Status}` as the pipeline state indicator.
+
+**Resolution:** 
+- Filter changed to `{Qualification Status} = 'Qualified'`
+- Update function changed to write `{Qualification Status}: 'Calendar Invite Sent'` after sending invite
+- This aligns Script 3 with the status-based pipeline pattern used by all other scripts
+
+**Rule going forward:** Before writing any Airtable filter or update, verify field names exist by running a one-record fetch and printing all field names. Never assume field names from the original Make.com blueprint are accurate.
+
+---
+
+### Issue 4: Script 2 — MAX_EMAILS_PER_RUN Throttle
+
+**Symptom:** Script 2 processed only one prospect per 15-minute cycle, causing a 45-minute delay to clear a batch of three prospects.
+
+**Root Cause:** MAX_EMAILS_PER_RUN was set to 1 as a development safeguard during initial build.
+
+**Resolution:** Raised to 5. Filter logic is verified correct and the safeguard is no longer warranted at this setting.
+
+**Rule going forward:** Review throttle settings on all email scripts before considering them production-ready. Development safeguards should be revisited after first successful live run.
+
