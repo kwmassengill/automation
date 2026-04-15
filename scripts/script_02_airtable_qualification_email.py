@@ -186,7 +186,7 @@ class AirtableClient:
     def get_new_prospects(self, table_id: str ) -> List[Dict[str, Any]]:
         """Get prospects matching filter: Email exists AND In Automation = true AND Qualification Status = New."""
         # Filter: Has Email AND In Automation = TRUE AND Qualification Status = "New"
-        filter_formula = "AND(NOT({Email} = BLANK()), {In Automation} = TRUE(), {Qualification Status} = 'New')"
+        filter_formula = "AND(NOT({Email} = BLANK()), {In Automation} = 1, {Qualification Status} = 'New')"
         
         url = f"{self.base_url}/{self.base_id}/{table_id}"
         params = {

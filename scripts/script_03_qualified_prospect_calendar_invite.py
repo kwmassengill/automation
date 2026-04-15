@@ -132,7 +132,7 @@ def get_qualified_prospects() -> List[Dict[str, Any]]:
     airtable = AirtableClient(AIRTABLE_API_KEY, AIRTABLE_BASE_ID)
     
     # Filter for records where Status = "Qualified" and Calendar Invite Not Sent
-    filter_formula = "AND({Status} = 'Qualified', {Calendar Invite Sent} = FALSE())"
+    filter_formula = "{Qualification Status} = 'Qualified'"
     
     try:
         records = airtable.get_records(AIRTABLE_TABLE_ID, filter_formula)
@@ -196,7 +196,7 @@ def update_prospect_status(prospect_id: str, invite_sent: bool = True) -> bool:
     airtable = AirtableClient(AIRTABLE_API_KEY, AIRTABLE_BASE_ID)
     
     fields = {
-        "Calendar Invite Sent": invite_sent,
+        "Qualification Status": "Calendar Invite Sent",
         "Calendar Invite Date": datetime.now().isoformat()
     }
     
