@@ -31,7 +31,7 @@ from shared_utils import setup_logger, handle_errors, StateManager
 # SAFEGUARD SETTINGS
 # ============================================================================
 DRY_RUN = False  # Set to False for production
-MAX_EMAILS_PER_RUN = 1  # Prevent mass operations
+MAX_EMAILS_PER_RUN = 5  # Prevent mass operations
 
 # ============================================================================
 # CONFIGURATION
