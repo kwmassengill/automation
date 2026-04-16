@@ -40,6 +40,10 @@ from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
+# Network connectivity gate (see shared_utils.check_network_connectivity)
+sys.path.insert(0, str(Path(__file__).parent))
+from shared_utils import check_network_connectivity
+
 # ============================================================================
 # SAFEGUARD SETTINGS
 # ============================================================================
@@ -315,7 +319,8 @@ def send_email(service, to_email: str, subject: str, body: str, dry_run: bool = 
 def main():
     """Main script logic."""
     logger.info(f"Starting {SCRIPT_NAME}")
-    
+    check_network_connectivity(logger)
+
     if not AIRTABLE_API_KEY:
         logger.error("AIRTABLE_API_KEY not found in environment")
         return

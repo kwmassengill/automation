@@ -23,7 +23,7 @@ from typing import Dict, List, Any, Optional
 # Add parent directory to path to import shared_utils
 sys.path.insert(0, str(Path(__file__).parent))
 try:
-    from shared_utils import setup_logger, StateManager, handle_errors
+    from shared_utils import setup_logger, StateManager, handle_errors, check_network_connectivity
 except ImportError:
     print("Warning: shared_utils not found in current directory. Using fallback logging.")
     import logging
@@ -323,7 +323,8 @@ def build_clickup_task_payload(fields: Dict, record_id: str) -> Dict:
 @handle_errors(SCRIPT_NAME, logger)
 def main():
     logger.info(f"Starting {SCRIPT_NAME} (DRY_RUN={DRY_RUN})")
-    
+    check_network_connectivity(logger)
+
     if not AIRTABLE_API_KEY or not CLICKUP_API_KEY:
         logger.error("Missing required API keys. Check .env file.")
         return

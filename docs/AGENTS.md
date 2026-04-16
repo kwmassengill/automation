@@ -2,7 +2,7 @@
 ## Claude Code Operational Reference
 
 **Read this file before touching any script, file, or configuration in this repository.**
-**Last Updated:** April 15, 2026
+**Last Updated:** April 16, 2026
 **Maintained By:** Claude Code (implementation) / Claude Projects (strategic coordination)
 
 ---
@@ -84,7 +84,7 @@ Meraglim Holdings Corporation is a Delaware C-Corp acquisition holding company. 
 | Script 10T | script_10t_meeting_intelligence_trigger.py | ACTIVE | Webhook | Public URL: script10t.meraglim.com |
 | MHC10 | script_10_pre_meeting_intelligence.py | ACTIVE | Event-driven | Manual trigger via reqbin.com |
 | MHC10T | script_mhc10t_meeting_intelligence_trigger.py | ACTIVE | Event-driven | MHC variant |
-| MHC11 | script_mhc11_post_meeting_intelligence_sync.py | ACTIVE | Every 5 min | External path verified; INTERNAL path untested |
+| MHC11 | script_mhc11_post_meeting_intelligence_sync.py | ACTIVE | Every 5 min | Both EXTERNAL and INTERNAL paths verified |
 
 ---
 
@@ -92,8 +92,8 @@ Meraglim Holdings Corporation is a Delaware C-Corp acquisition holding company. 
 
 | Item | Priority | Added |
 |------|----------|-------|
-| Test Script 11 INTERNAL email path | High | April 8, 2026 |
 | Update Clay webhook URL in Clay UI | Medium | April 8, 2026 |
+| Monitor Script 11 INTERNAL path for 24h to confirm stability | Low | April 16, 2026 |
 
 ---
 
@@ -149,6 +149,10 @@ MHC-11 prospect email extraction: Use regex — not Make.com .com-boundary subst
 
 ClickUp task ID extraction: Use last(split(URL; "/")) from stored ClickUp task URL in Airtable.
 
+ClickUp date custom fields: Send Unix epoch milliseconds (integer) — not YYYY-MM-DD strings. Airtable wants date strings; ClickUp wants epoch ms.
+
+Gmail header name comparison: Use case-insensitive lookup (h["name"].lower() == "subject"). Python email library may emit lowercase header names; Gmail API preserves sender casing.
+
 ---
 
 ## ClickUp Reference
@@ -195,3 +199,13 @@ When Claude Code encounters an ambiguous architectural decision: check this file
 - Rules added: Plist verification required after every deployment. Airtable field names must be verified by one-record fetch before any new filter or update is written.
 - Script 5: Raised MAX_EMAILS_PER_RUN from 1 to 5. Confirmed Days Since Email field is populated correctly — backlog of 7 overdue follow-ups cleared same session.
 - Script 0: Expanded from single-layer log health report to three-layer report. Layer 1 (script health) unchanged. Layer 2 adds Pipeline Intelligence — read-only Airtable rollup of prospect counts by Qualification Status, overdue 7-day follow-ups (scoped to status = Qualification Email Sent only), and email activity in last 24h. Layer 3 adds Open Items block parsed from this file's Open Items table so unresolved items surface in every daily email until removed. Added `--dry-run` flag that writes HTML preview to logs/script_00_dryrun.html without sending. Live test verified in inbox.
+
+### April 16, 2026
+- shared_utils.py: Added check_network_connectivity() — TCP connect to www.google.com:443 with 5 retries / 10s waits. On failure, logs warning and sys.exit(0) so LaunchAgent records clean exit. Fixes Script 1 early-morning DNS failures when LaunchAgent fires before Mac has network.
+- Scripts 1, 2, 3, 4, 5, 7, 8: Added check_network_connectivity(logger) call at top of main(). .bak files created before each edit.
+- Legacy duplicate plists removed: com.meraglim.script_02_qualification_email, script_03_qualified_prospect_calendar_invite, script_04_not_qualified_polite_decline, script_07_gmail_reply_ai_qualification, script_08_meeting_scheduled_clickup. These were leftover from the pre-April-15 naming scheme and caused doubled execution of scripts 2, 3, 4, 7, 8.
+- Dead plist removed: com.meraglim.script_10_webhook. Referenced /usr/local/bin/python3 (doesn't exist) and ~/Automations/script_10/ (doesn't exist). KeepAlive=true caused a crash loop. Superseded by com.meraglim.script10t.
+- Script 11 (MHC11): Created and loaded com.meraglim.script11-post-meeting-intelligence plist (was never deployed despite README claiming ACTIVE). Same class of missing-plist bug fixed April 15 for scripts 2–5, 7, 8.
+- Script 11 (MHC11): Fixed Subject header extraction — changed case-sensitive h["name"] == "Subject" to h["name"].lower() == "subject". Python email.mime library emits lowercase header names; Gmail API preserves sender casing. Caused INTERNAL path to skip all emails with "No matching route for subject: ".
+- Script 11 (MHC11): Fixed ClickUp Meeting Summary task creation — changed Meeting Date custom field value from strftime("%Y-%m-%d") to epoch milliseconds. ClickUp date fields require Unix ms, not date strings. 400 Bad Request resolved.
+- Script 11 (MHC11): INTERNAL path verified end-to-end — Claude analysis, Meeting Summary task (86e0ykw8n), 3 Next Step tasks all created successfully. Open item from April 8 closed.

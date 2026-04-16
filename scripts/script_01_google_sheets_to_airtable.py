@@ -3,7 +3,7 @@ import os, sys, json
 from datetime import datetime
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
-from shared_utils import setup_logger, StateManager, send_error_notification, handle_errors
+from shared_utils import setup_logger, StateManager, send_error_notification, handle_errors, check_network_connectivity
 import requests
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -83,6 +83,7 @@ def map_sheet_row_to_airtable(row):
 @handle_errors(SCRIPT_NAME, logger)
 def main():
     logger.info(f"Starting {SCRIPT_NAME}")
+    check_network_connectivity(logger)
     sheets = GoogleSheetsClient(GOOGLE_TOKEN_FILE)
     all_rows = sheets.get_rows(GOOGLE_SHEETS_ID, GOOGLE_SHEET_NAME)
     logger.info(f"Found {len(all_rows)} rows")

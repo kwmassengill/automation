@@ -6,7 +6,7 @@ This project converts 12 Make.com automation blueprints into persistent local Py
 
 **Status:** 🟢 Active — Scripts 1–9, 10T, MHC10, MHC10T, MHC11 deployed and verified; Scripts 6 & 8 fixed and verified  
 **Cost:** $0 — All automation runs locally on your Mac  
-**Last Updated:** April 8, 2026
+**Last Updated:** April 16, 2026
 
 ---
 
@@ -33,7 +33,7 @@ This project converts 12 Make.com automation blueprints into persistent local Py
 | Script 10T | Meeting Intelligence Trigger | ✅ ACTIVE | Webhook-triggered; event-driven |
 | MHC10 | Meeting Intelligence Sync | ✅ ACTIVE | Event-driven |
 | MHC10T | Meeting Intelligence Trigger (MHC) | ✅ ACTIVE | Event-driven |
-| MHC11 | Post-Meeting Intelligence Sync | ✅ ACTIVE | Fully integrated: Gmail + Claude + Airtable + ClickUp; INTERNAL path testing pending |
+| MHC11 | Post-Meeting Intelligence Sync | ✅ ACTIVE | Fully integrated: Gmail + Claude + Airtable + ClickUp; EXTERNAL + INTERNAL paths verified |
 
 ---
 
@@ -99,9 +99,8 @@ for plist in ~/Library/LaunchAgents/com.meraglim.*.plist; do launchctl load "$pl
 
 | Item | Priority | Added |
 |------|----------|-------|
-| Test Script 11 INTERNAL email path (internal meeting transcript processing) | High | April 8, 2026 |
-| Monitor Scripts 6 & 8 for 24–48 hours to confirm no duplicate ClickUp tasks | Medium | April 8, 2026 |
-| Clay webhook URL in Clay's UI still needs to be pointed to `https://script10t.meraglim.com/clay-webhook` | Medium | April 8, 2026 |
+| Update Clay webhook URL in Clay UI to `https://script10t.meraglim.com/clay-webhook` | Medium | April 8, 2026 |
+| Monitor Script 11 INTERNAL path for 24h to confirm stability | Low | April 16, 2026 |
 
 ---
 

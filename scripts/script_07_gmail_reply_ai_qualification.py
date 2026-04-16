@@ -25,6 +25,10 @@ import base64
 import email
 from email.utils import parseaddr
 
+# Network connectivity gate (see shared_utils.check_network_connectivity)
+sys.path.insert(0, str(Path(__file__).parent))
+from shared_utils import check_network_connectivity
+
 # Load environment variables
 # First try to load from the current directory (for testing in deployment folder)
 from pathlib import Path
@@ -314,7 +318,8 @@ def mark_email_as_read(service, message_id: str) -> bool:
 
 def main():
     logger.info(f"Starting Script 7: Gmail Reply → AI Qualification (DRY_RUN={DRY_RUN})")
-    
+    check_network_connectivity(logger)
+
     # Initialize DB
     conn = init_db()
     

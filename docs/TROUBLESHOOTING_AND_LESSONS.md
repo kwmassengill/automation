@@ -404,3 +404,73 @@ curl -fsSL "<new_cdn_url>" | grep "expected_text"
 
 **Rule going forward:** Never use substring matching on Airtable status values. Pipeline statuses are distinct tokens and must be compared by equality against an explicit whitelist. Before wiring any new filter to an Airtable status field, enumerate the actual distinct values present in the table.
 
+---
+
+## April 16, 2026 — Network Connectivity Gate, Duplicate Plists, Script 11 INTERNAL Path
+
+### Issue 1: Script 1 DNS Failures on Early Morning LaunchAgent Fires
+
+**Symptom:** Script 1 logged "Fatal: Unable to find the server at sheets.googleapis.com" on early morning runs.
+
+**Root Cause:** LaunchAgent fires before the Mac has established a network connection after sleep/boot. DNS resolution fails immediately.
+
+**Resolution:** Added `check_network_connectivity()` to `shared_utils.py` — a reusable function that attempts a TCP connection to `www.google.com:443` up to 5 times with 10-second waits. On success, returns True; on exhaustion, logs a warning and calls `sys.exit(0)` so the LaunchAgent records a clean exit and retries on its next scheduled tick. Added the call at the top of `main()` in Scripts 1, 2, 3, 4, 5, 7, and 8.
+
+**Rule going forward:** Any script that makes API calls and runs via LaunchAgent should call `check_network_connectivity(logger)` before the first API call.
+
+---
+
+### Issue 2: Duplicate LaunchAgent Plists for Scripts 2, 3, 4, 7, 8
+
+**Symptom:** `launchctl list | grep com.meraglim` showed two plists per script — e.g., both `com.meraglim.script02` and `com.meraglim.script_02_qualification_email`. Scripts 2, 3, 4 legacy plists showed exit code 2.
+
+**Root Cause:** The April 15 session created new short-name plists (script02, script03, etc.) but did not unload or delete the original long-name plists created during earlier sessions. Both were loaded, causing each script to execute twice per interval.
+
+**Resolution:** Unloaded and deleted all five legacy plists. Confirmed 13 clean plists remain with no duplicates.
+
+**Rule going forward:** When creating a replacement plist, always unload and delete the old one in the same session. Verify with `launchctl list | grep com.meraglim` that no duplicates exist.
+
+---
+
+### Issue 3: Dead com.meraglim.script_10_webhook Plist (Exit 78)
+
+**Symptom:** `launchctl list` showed `com.meraglim.script_10_webhook` with exit code 78 (EX_CONFIG) and no PID. `KeepAlive=true` caused a continuous crash loop.
+
+**Root Cause:** Plist referenced three nonexistent paths: `/usr/local/bin/python3` (Apple Silicon uses `/opt/homebrew/bin/`), `/Users/kevinmassengill/Automations/script_10/` (directory doesn't exist), and log files that were never created. This was a relic from the pre-migration layout, superseded by `com.meraglim.script10t`.
+
+**Resolution:** Unloaded and deleted the plist.
+
+---
+
+### Issue 4: Script 11 (MHC11) — Missing LaunchAgent Plist
+
+**Symptom:** Script 11 had not run since April 8 despite README marking it ACTIVE. No plist on disk or loaded.
+
+**Root Cause:** Same class of missing-plist bug fixed on April 15 for Scripts 2–5, 7, 8. The plist was never created during the original deployment.
+
+**Resolution:** Created `com.meraglim.script11-post-meeting-intelligence.plist` (300-second interval, RunAtLoad, WorkingDirectory=scripts/). Loaded and verified first log appeared within one tick.
+
+---
+
+### Issue 5: Script 11 (MHC11) — INTERNAL Path Returned Empty Subject
+
+**Symptom:** Script 11 found 1 unread INTERNAL email but logged "No matching route for subject: " — empty string. The INTERNAL code path never fired.
+
+**Root Cause:** The Subject header lookup on line 127 used strict case-sensitive comparison: `h["name"] == "Subject"`. The test email was sent via Python's `email.mime` library, which set the header as lowercase `"subject"`. Gmail's API preserves the literal casing from the sender. The strict equality missed the lowercase header.
+
+**Resolution:** Changed to case-insensitive comparison: `h["name"].lower() == "subject"`. RFC 5322 specifies header names are case-insensitive.
+
+**Rule going forward:** Always use case-insensitive comparison when looking up email headers from Gmail API responses. Different MIME libraries and email clients may use different casing.
+
+---
+
+### Issue 6: Script 11 (MHC11) — ClickUp Meeting Summary 400 Bad Request
+
+**Symptom:** After Subject fix, INTERNAL path fired and Claude succeeded, but ClickUp Meeting Summary task creation returned 400 Bad Request for `POST /list/901711661162/task`.
+
+**Root Cause:** The `Meeting Date` custom field (type `date`, id `68f58d6b-...`) was set with `now.strftime("%Y-%m-%d")` — a date string. ClickUp's API requires date custom fields as Unix epoch milliseconds (integer). The variable `due_ms` with the correct format was already computed on the preceding line but not used for the custom field.
+
+**Resolution:** Changed `value: now.strftime("%Y-%m-%d")` to `value: due_ms` on line 360. Retested — Meeting Summary task `86e0ykw8n` created successfully with 3 Next Step tasks.
+
+**Rule going forward:** ClickUp date custom fields must be set as Unix epoch milliseconds (integer). This is the inverse of Airtable's date fields which require YYYY-MM-DD strings. Always check the target API's date format before writing date values.
+

@@ -124,7 +124,13 @@ class GmailClient:
             ).execute()
             
             headers = msg["payload"].get("headers", [])
-            subject = next((h["value"] for h in headers if h["name"] == "Subject"), "")
+            # RFC 5322 header names are case-insensitive. Some MIME libraries
+            # (e.g., Python email.mime via msg["subject"]=) emit lowercase
+            # header names, which a strict == "Subject" check would miss.
+            subject = next(
+                (h["value"] for h in headers if h["name"].lower() == "subject"),
+                "",
+            )
             snippet = msg.get("snippet", "")
             
             attachment_data = None
@@ -351,7 +357,7 @@ class ClickUpClient:
             custom_fields = [
                 {
                     "id": "68f58d6b-f9b3-4dd1-b9dc-a85852b61a5f",
-                    "value": now.strftime("%Y-%m-%d")
+                    "value": due_ms
                 },
                 {
                     "id": "78d9e9fc-03d1-4a85-8b56-1ae106aa0a1c",

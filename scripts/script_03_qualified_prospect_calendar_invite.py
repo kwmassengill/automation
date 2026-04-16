@@ -23,7 +23,7 @@ from typing import List, Dict, Any, Optional
 # Add parent directory to path for shared utilities
 sys.path.insert(0, str(Path(__file__).parent))
 
-from shared_utils import setup_logger, StateManager, send_error_notification, handle_errors
+from shared_utils import setup_logger, StateManager, send_error_notification, handle_errors, check_network_connectivity
 
 # Third-party imports
 import requests
@@ -212,7 +212,8 @@ def update_prospect_status(prospect_id: str, invite_sent: bool = True) -> bool:
 def main():
     """Main execution function."""
     logger.info(f"Starting {SCRIPT_NAME}")
-    
+    check_network_connectivity(logger)
+
     try:
         # Get qualified prospects
         prospects = get_qualified_prospects()

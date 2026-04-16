@@ -7,8 +7,10 @@ import os
 import sys
 import logging
 import smtplib
+import socket
 import sqlite3
 import json
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -23,6 +25,53 @@ if _ENV_FILE.exists():
     load_dotenv(str(_ENV_FILE))
 else:
     load_dotenv()  # Fallback: search current directory (works in dev/testing)
+
+# ============================================================================
+# Network Connectivity Gate
+# ============================================================================
+
+def check_network_connectivity(
+    logger: Optional[logging.Logger] = None,
+    host: str = "www.google.com",
+    port: int = 443,
+    max_attempts: int = 5,
+    wait_seconds: int = 10,
+) -> bool:
+    """
+    Gate API calls on verified network connectivity.
+
+    Early-morning LaunchAgent fires can race the Mac's network coming online,
+    causing DNS failures like "Unable to find the server at sheets.googleapis.com".
+    Call this at the top of main() before any outbound API call.
+
+    Retries up to max_attempts times with wait_seconds between attempts. On
+    success returns True. On exhausted retries logs a warning and calls
+    sys.exit(0) so the LaunchAgent records a clean exit and retries on its
+    next scheduled run rather than looping on an immediate failure.
+    """
+    for attempt in range(1, max_attempts + 1):
+        try:
+            with socket.create_connection((host, port), timeout=5):
+                if logger:
+                    logger.info(
+                        f"Network connectivity confirmed on attempt {attempt}/{max_attempts}"
+                    )
+                return True
+        except OSError as exc:
+            if logger:
+                logger.info(
+                    f"Network check attempt {attempt}/{max_attempts} failed: {exc}"
+                )
+            if attempt < max_attempts:
+                time.sleep(wait_seconds)
+
+    if logger:
+        logger.warning(
+            f"Network connectivity not confirmed after {max_attempts} attempts; "
+            f"exiting cleanly. LaunchAgent will retry on next scheduled run."
+        )
+    sys.exit(0)
+
 
 # ============================================================================
 # Logging Configuration

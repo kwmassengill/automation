@@ -2,7 +2,7 @@
 
 This registry is the **single source of truth** for all automation scripts. Read this file first at the start of every task before taking any action.
 
-**Last Updated:** April 8, 2026
+**Last Updated:** April 16, 2026
 
 ---
 
@@ -24,7 +24,7 @@ This registry is the **single source of truth** for all automation scripts. Read
 | 10 | Pre-Meeting Intelligence | `script_10_pre_meeting_intelligence.py` | ✅ ACTIVE | Event-driven | Triggered by Script 10T |
 | MHC10 | Meeting Intelligence Sync | `script_mhc10_meeting_intelligence_sync.py` | ✅ ACTIVE | Event-driven | MHC variant |
 | MHC10T | Meeting Intelligence Trigger (MHC) | `script_mhc10t_meeting_intelligence_trigger.py` | ✅ ACTIVE | Event-driven | MHC variant |
-| MHC11 | Post-Meeting Intelligence Sync | `script_mhc11_post_meeting_intelligence_sync.py` | ✅ ACTIVE | LaunchAgent — every 5 min | Watches Gmail for TRANSCRIPT/INTERNAL emails; Claude analysis; Airtable updates; ClickUp task creation; INTERNAL path testing pending |
+| MHC11 | Post-Meeting Intelligence Sync | `script_mhc11_post_meeting_intelligence_sync.py` | ✅ ACTIVE | LaunchAgent — every 5 min | Watches Gmail for TRANSCRIPT/INTERNAL emails; Claude analysis; Airtable updates; ClickUp task creation; EXTERNAL + INTERNAL paths verified April 16 |
 
 ---
 

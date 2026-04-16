@@ -25,7 +25,7 @@ from googleapiclient.discovery import build
 
 # Add the project directory to the path so we can import shared_utils
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from shared_utils import setup_logger, handle_errors, StateManager
+from shared_utils import setup_logger, handle_errors, StateManager, check_network_connectivity
 
 # ============================================================================
 # SAFEGUARD SETTINGS
@@ -242,7 +242,8 @@ def send_email(service, to_email: str, subject: str, body_html: str) -> bool:
 @handle_errors(SCRIPT_NAME, logger)
 def main():
     logger.info(f"Starting {SCRIPT_NAME} execution (DRY_RUN={DRY_RUN})")
-    
+    check_network_connectivity(logger)
+
     if not AIRTABLE_API_KEY:
         logger.error("AIRTABLE_API_KEY environment variable is not set.")
         return False
